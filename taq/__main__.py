@@ -296,9 +296,19 @@ def cmd_statusline() -> int:
     """Called by Claude Code with the session payload on stdin. Two jobs:
     persist the rate limits (nothing else can see them), and print a status
     line worth having. Never raises — a traceback here lands in the UI."""
+    # Claude Code pipes the payload in. Run by hand on a terminal there is no
+    # input, and read() would just sit there looking hung until Ctrl-C.
+    if sys.stdin.isatty():
+        print("taq statusline expects a Claude Code payload on stdin.")
+        print("It is invoked by the statusLine hook, not run directly.")
+        print("\nTo see what it would print:")
+        print("  echo '{\"model\":{\"display_name\":\"Opus 5\"}}' | taq statusline")
+        print("\nTo check whether the hook is working:  taq doctor")
+        return 2
+
     try:
         payload = json.loads(sys.stdin.read())
-    except ValueError:
+    except (ValueError, KeyboardInterrupt, EOFError):
         print("taq")
         return 0
 
@@ -467,8 +477,18 @@ def cmd_install() -> int:
 
     print(f"  wrote statusLine -> {paths.CLAUDE_SETTINGS}")
     print(f"  command: {cmd}")
-    print("\n  Claude Code picks this up on the next render. Note that a custom")
-    print("  status line replaces most of the built-in footer hints.")
+
+    # settings.json is read when a session starts, so sessions already running
+    # will never invoke this hook. Saying "next render" sent people back to
+    # `taq doctor` wondering why it still reported nothing.
+    live = len(usage.live_sessions())
+    print("\n  Start a NEW Claude Code session to activate it — settings.json is")
+    print("  read at session start, so any session already open will not use it.")
+    if live:
+        print(f"  ({live} session{'s' if live != 1 else ''} currently running, "
+              f"none of which will pick this up.)")
+    print("\n  Verify with:  taq doctor   (look for 'rate limits')")
+    print("  Note a custom status line replaces most built-in footer hints.")
     print("  Undo: delete the statusLine key, or restore the backup.")
     return 0
 
