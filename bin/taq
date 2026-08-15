@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run taq straight from a checkout, with no install step. Symlink this onto
+# your PATH:  ln -s "$PWD/bin/taq" ~/.local/bin/taq
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+exec python3 -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from taq.__main__ import main; sys.exit(main())' "$here" "$@"

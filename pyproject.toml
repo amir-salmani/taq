@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taq"
+version = "0.1.0"
+description = "A low-footprint terminal HUD for Claude usage and proxy coherence"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Amir-Salmani", email = "hi@amirsalmani.com" }]
+license = { text = "MIT" }
+# No dependencies, deliberately. Everything comes from the standard library.
+dependencies = []
+
+[project.scripts]
+taq = "taq.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/amir-salmani/taq"
+
+[tool.setuptools]
+packages = ["taq"]
