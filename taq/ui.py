@@ -275,6 +275,10 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
 
     # Per-core, two rows of compact meters when there is room.
     if v.per_core and b.room > 2 and b.iw >= 30:
+        # Index and value sit together at the left of each cell, with the meter
+        # filling the rest. Putting the value last instead left each core's
+        # number touching the next core's index — "2 1 2 2 0 3" reads as noise
+        # even though it is correct. The meter now separates the cells.
         cols = 2 if b.iw < 46 else 4
         cell = b.iw // cols
         for row_start in range(0, min(len(v.per_core), cols * 2), cols):
@@ -284,10 +288,10 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
                 idx = row_start + j
                 if idx >= len(v.per_core):
                     break
-                x = j * cell
+                x, pct = j * cell, v.per_core[idx]
                 b.put(b.y, x, f"{idx:>2}", attr(C_DIM))
-                meter(b, b.y, x + 3, max(3, cell - 9), v.per_core[idx] / 100.0,
-                      f"{v.per_core[idx]:3.0f}")
+                b.put(b.y, x + 3, f"{pct:>3.0f}", grad(pct / 100))
+                meter(b, b.y, x + 7, max(3, cell - 8), pct / 100.0)
             b.y += 1
         b.skip()
 
@@ -319,8 +323,11 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
         for dk in mon.disks:
             if b.room <= 0:
                 break
-            b.put(b.y, 0, dk.mount[:8].ljust(8), attr(C_DIM))
-            meter(b, b.y, 9, max(5, b.iw - 26), dk.pct / 100.0,
+            # Elide from the left: the tail of a mount path identifies it,
+            # the head does not ("/boot/ef" told you nothing).
+            name = dk.mount if len(dk.mount) <= 10 else "…" + dk.mount[-9:]
+            b.put(b.y, 0, name.ljust(10), attr(C_DIM))
+            meter(b, b.y, 11, max(5, b.iw - 28), dk.pct / 100.0,
                   f"{human_bytes(dk.total - dk.used)} free")
             b.y += 1
 
