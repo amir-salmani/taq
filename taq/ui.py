@@ -430,6 +430,11 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
             b.put(b.y, half + 1, spark(mon.net_up_history, half), attr(C_ACCENT))
             b.y += 1
 
+    # Power before disks. When the panel runs out of rows something has to go,
+    # and on a laptop "4.3h left" earns its place ahead of a disk that has been
+    # 70% full for a month.
+    _power_block(b, v)
+
     if mon.disks and b.room > 1:
         b.skip()
         for dk in mon.disks:
@@ -443,6 +448,15 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
                   f"{human_bytes(dk.total - dk.used)} free")
             b.y += 1
 
+    if b.room > 1:
+        b.skip()
+        bits = [f"up {short_dur(v.uptime)}", f"{v.procs} procs"]
+        if v.power.cycles:
+            bits.append(f"{v.power.cycles} cycles")
+        b.line("  ".join(bits), attr(C_DIM))
+
+
+def _power_block(b: Box, v) -> None:
     p = v.power
     if p.present and p.pct is not None and b.room > 2:
         b.skip()
@@ -483,13 +497,6 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
                 else:
                     b.put(b.y, 4, "learning draw at this level…", attr(C_DIM))
                 b.y += 1
-
-    if b.room > 1:
-        b.skip()
-        bits = [f"up {short_dur(v.uptime)}", f"{v.procs} procs"]
-        if p.cycles:
-            bits.append(f"{p.cycles} cycles")
-        b.line("  ".join(bits), attr(C_DIM))
 
 
 PANELS = {

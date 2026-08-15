@@ -7,21 +7,44 @@ think it is, what Docker is doing, and what the system is doing.
 Stdlib Python, no dependencies, ~28 MB resident.
 
 ```
- taq   1 Claude   2 Docker   3 System   4 Coherence            ◆ 3/4   ▲ COHERENT   22:12
-╭─ Claude ─────────────────────────────────────────╮╭─ System ────────────────────────╮
-│ 5h ████████████████░░░░░░░░░░  62.4%             ││ CPU   8.9%  57°C   load 2.51    │
-│    resets 17:10 · in 1.4h                        ││ ⠀⠀⠀⠀⠀⠀⠀⣀⣤⣆⣀⣠⣤⣶⣤⣄⣀⣤⣶⣿⣷⣤⣀⣠⣴⣶⣿⣷⣦⣄⡀ │
-│    ⚠ cap ~16:31 — 39m early                      ││  0 ░░░░░  6   1 ███▌░ 75        │
-│                                                  ││ MEM █████████████░░░ 10.3G/14.6G│
-│ SESSIONS (7)                                     ││ NET ↓730K/s      ↑1.3M/s        │
-│ ▸ ● amirsalmani-0e    busy                       ││ up 3.3d  2732 procs  🔋94%      │
-╰──────────────────────────────────────────── j/k ─╯╰─────────────────────────────────╯
-╭─ Docker ─────────────────────────────────────────╮╭─ Coherence ─────────────────────╮
-│ ▼ myproject                                      ││ ▲ COHERENT                      │
-│   ● api          100.9%   424K Up 3 minutes      ││ tunnelled via :12334            │
-│ ▸ ● web            2.0%  10.9M Up 3m (healthy)   ││ ● Throne     listening :12334   │
-│   ○ migrate                    Exited (0)        ││ ● shell env  127.0.0.1:12334    │
+ taq   1 Claude   2 Docker   3 System   4 Coherence           ◆ 2/3   ▲ COHERENT   23:57
+╭─ Claude ─────────────────────────────────────────╮╭─ System ─────────────────────────╮
+│ Plan usage limits Max (5x)                       ││ CPU   8.4%  53°C   load 1.02     │
+│                                                  ││ ⠀⠀⣀⣤⣆⣀⣠⣤⣶⣤⣄⣀⣤⣶⣿⣷⣤⣀⣠⣴⣶⣿⣷⣦⣄⡀⣠⣴⣶⣿⣷⣦⣄ │
+│ Current session                        62% used  ││  0  10 ▌░░░░  1   8 ░░░░░        │
+│ ██████████████████░░░░░░░░░░░                    ││  2   9 ▌░░░░  3  64 ███░░        │
+│ resets 03:00 · in 3h                             ││ MEM ████████████░░░ 10.8G/14.6G  │
+│ ⚠ hits the cap ~02:21, 39m early                 ││ SWP ████████▌░░░░░░ 7.4G         │
+│                                                  ││ NET ↓3.9K/s      ↑1.2K/s         │
+│ Weekly · all models                    14% used  ││                                  │
+│ ████░░░░░░░░░░░░░░░░░░░░░░░░░                    ││ PWR 🔋58%   9.1W   4.1h left     │
+│ resets Fri 18:30 · in 5.8d                       ││ ███████████░░░░░░░░  health 96%  │
+│ +2.4%/h — clears the window                      ││ LCD 60%  ██████████▌░░░░░░       │
+│                                                  ││     at 30%: 7.1W  +1h20m         │
+│ per-model limits are not exposed to local tools  ││ /       ███████░░░░░░ 329G free  │
+│                                                  ││ up 3.4d  2732 procs  14 cycles   │
+│ SESSIONS (7)                                     │╰──────────────────────────────────╯
+│ ▸ ● amirsalmani-0e    busy                       │╭─ Coherence ──────────────────────╮
+│   ○ vuhom-09          idle 2m                    ││ ▲ COHERENT                       │
+│                                                  ││ tunnelled via :12334             │
+│ OUTPUT TOKENS (7d)                               ││ ● Throne     listening :12334    │
+│ Lotusion         2.3M ████████████████████       ││ ● GNOME      manual              │
+╰──────────────────────────────────────────── j/k ─╯│ ● shell env  127.0.0.1:12334     │
+╭─ Docker ─────────────────────────────────────────╮│ ○ apt        direct + per-host   │
+│ ▼ career-ops                                     ││ ● zed        127.0.0.1:12334     │
+│ ▸ ● web            2.0%  10.9M Up 3m (healthy)   ││ ● DNS        Throne resolver     │
+│   ○ migrate                    Exited (143)      ││                                  │
+│ ───────────────────────────────────────────────  ││ exit         194.5.207.166       │
+│ web                 service web    aa0d354c1f9d  ││                                  │
+│ image      node:24-alpine                        ││ STALE ENVIRONMENT (21)           │
+│ state      running · Up 3 minutes (healthy)      ││ started while the proxy was up,  │
+│ run        started 15 Aug 22:50 · unless-stopped ││ still pointing at it — restart.  │
+│ cpu / mem  2.0%   10.9M / 14.6G  (1%)            ││ claude       ×7  1115452 1458097 │
+│ net        ↓108M  ↑6.7M                          ││ bash         ×6  6769 7018 …     │
+│ ports      127.0.0.1:3000→3000/tcp               ││ zed-editor   ×2  1114638 1114676 │
+│ mounts     ~/CodeBase/app → /app [bind,rw]       ││                                  │
 ╰──────────────────────── j/k  L logs  S/s/R ──────╯╰──────────────────────────────────╯
+ ? keys   Tab panel   r refresh   q quit                                    28MB · 1s
 ```
 
 ## Why
