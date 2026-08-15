@@ -33,6 +33,25 @@ WINDOWS = ("five_hour", "seven_day")
 WINDOW_LABELS = {"five_hour": "Current session", "seven_day": "Weekly · all models"}
 
 
+def hook_status() -> tuple[bool, float]:
+    """(is the statusline hook installed, when settings.json last changed).
+
+    The install time matters: Claude Code reads settings.json at session start,
+    so any session older than that timestamp will never invoke the hook. Knowing
+    both lets the UI say which of those two situations you are actually in.
+    """
+    try:
+        raw = paths.CLAUDE_SETTINGS.read_text()
+        mtime = paths.CLAUDE_SETTINGS.stat().st_mtime
+    except OSError:
+        return False, 0.0
+    try:
+        sl = json.loads(raw).get("statusLine") or {}
+    except ValueError:
+        return False, 0.0
+    return "statusline" in str(sl.get("command", "")).lower(), mtime
+
+
 def read_plan() -> str:
     """Subscription tier, e.g. "Max (5x)".
 
@@ -83,6 +102,11 @@ def record(payload: dict) -> None:
                 if limits.get(w)
             },
         }
+
+        # A payload with no rate_limits tells us nothing, and writing it just
+        # litters the state directory with files read_windows will skip.
+        if not snap["limits"]:
+            return
 
         # Per-session snapshot, written atomically so a concurrent reader never
         # sees a half-written file.

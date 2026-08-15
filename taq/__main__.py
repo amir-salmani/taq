@@ -60,6 +60,7 @@ class App:
         self._projects: list = []
         self._split: list = []
         self._plan: str = ""
+        self._hook: tuple = (False, 0.0)
         self._detail = None
 
     def _due(self, key: str, every: float, force: bool, now: float) -> bool:
@@ -99,6 +100,7 @@ class App:
         if self._due("quota", QUOTA_EVERY, force, now):
             self._windows = quota.read_windows()
             self._plan = quota.read_plan()
+            self._hook = quota.hook_status()
 
         # Inspect only the container the cursor is on.
         sel = self.selected_container()
@@ -122,6 +124,7 @@ class App:
             "monitor": self.monitor,
             "windows": self._windows,
             "plan": self._plan,
+            "hook": self._hook,
             "detail": self._detail,
             "sessions": self._sessions,
             "projects": self._projects,

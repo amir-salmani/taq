@@ -61,11 +61,25 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
         b.y += 1
         b.skip()
     if not windows:
+        # Two very different situations that look identical from here: never
+        # set up, versus set up but nothing has fed it. Telling someone to run
+        # a command they have already run is the worst possible answer.
+        hooked, hooked_at = snap.get("hook", (False, 0.0))
         b.line("no rate-limit data yet", attr(C_WARN))
         b.skip()
-        for chunk in wrap("Rate limits reach a local tool only through the "
-                          "statusline hook. Run `taq install`, then open any "
-                          "Claude Code session.", b.iw):
+
+        if not hooked:
+            msg = ("Rate limits reach a local tool only through the statusline "
+                   "hook. Run `taq install` to add it.")
+        else:
+            stale = sum(1 for s in snap["sessions"] if s.started_at < hooked_at)
+            msg = ("The hook is installed. Claude Code reads settings.json at "
+                   "session start, so start a NEW session — this fills in "
+                   "within seconds of one opening.")
+            if stale:
+                msg += (f" All {stale} running session"
+                        f"{'s' if stale != 1 else ''} predate the hook.")
+        for chunk in wrap(msg, b.iw):
             b.line(chunk, attr(C_DIM))
         b.skip()
     else:
@@ -94,8 +108,9 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
             elif w.rate is not None:
                 b.put(b.y, 0, "flat", attr(C_DIM))
             else:
-                b.put(b.y, 0, f"learning burn rate ({max(0, 3 - w.samples)} more samples)",
-                      attr(C_DIM))
+                need = max(1, 3 - w.samples)
+                b.put(b.y, 0, f"learning burn rate ({need} more "
+                              f"sample{'s' if need != 1 else ''})", attr(C_DIM))
             b.y += 2
 
         # The web page also shows a per-model weekly bar (Fable). That number is
