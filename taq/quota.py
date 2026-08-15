@@ -28,6 +28,12 @@ from . import paths
 
 WINDOWS = ("five_hour", "seven_day")
 
+# How long each window actually is. Used to decide when a trend is worth
+# extrapolating: twenty minutes says plenty about a five-hour budget and
+# nothing at all about a seven-day one.
+WINDOW_SECONDS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
+MIN_SPAN_FRACTION = 0.02      # observe at least 2% of the window first
+
 # The web UI calls these "Current session" and "Weekly · All models". Using its
 # words means the two screens can be compared without translating.
 WINDOW_LABELS = {"five_hour": "Current session", "seven_day": "Weekly · all models"}
@@ -191,6 +197,8 @@ class Window:
     eta: float | None = None    # epoch seconds we project hitting 100%
     rate: float | None = None   # percentage points per hour
     samples: int = 0
+    span: float = 0.0           # seconds covered by the samples we have
+    min_span: float = 0.0       # seconds needed before a trend is credible
 
     @property
     def stale_for(self) -> float:
@@ -263,8 +271,14 @@ def _attach_projection(windows: dict[str, Window]) -> None:
         pts = sorted(set(pts))
         win.samples = len(pts)
 
-        # Two points a minute apart is noise, not a trend.
-        if len(pts) < 3 or pts[-1][0] - pts[0][0] < 300:
+        # Two points a minute apart is noise, not a trend — and the bar for
+        # "trend" scales with the window. Extrapolating a seven-day budget from
+        # twenty minutes produced confident nonsense ("hits the cap 3.5d early")
+        # off a single percentage point of movement.
+        min_span = max(300.0, WINDOW_SECONDS.get(w, 5 * 3600) * MIN_SPAN_FRACTION)
+        win.span = pts[-1][0] - pts[0][0]
+        win.min_span = min_span
+        if len(pts) < 3 or win.span < min_span:
             continue
 
         n = len(pts)

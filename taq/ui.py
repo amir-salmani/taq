@@ -104,13 +104,14 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
             # Showing a frozen number with no age is how you end up trusting
             # 44% while the web page says 49%.
             feeders = snap.get("feeders", 0)
-            if w.stale_for > 180:
-                if feeders:
-                    b.put(b.y, 0, f"⚠ {short_dur(w.stale_for)} old "
-                                  f"(≥ this now)", attr(C_WARN))
-                else:
-                    b.put(b.y, 0, f"⚠ frozen — {short_dur(w.stale_for)} old, "
-                                  f"no live session reporting", attr(C_BAD, True))
+            if not feeders:
+                # Nothing can update this, so say so every time, not just once
+                # it has gone visibly old.
+                b.put(b.y, 0, f"⚠ frozen · measured {short_dur(w.stale_for)} ago",
+                      attr(C_BAD, True))
+            elif w.stale_for > 180:
+                b.put(b.y, 0, f"⚠ {short_dur(w.stale_for)} old — at least this much",
+                      attr(C_WARN))
             elif w.eta is not None and w.will_exhaust:
                 b.put(b.y, 0, f"⚠ hits the cap ~{clock(w.eta)}, "
                               f"{short_dur(w.resets_at - w.eta)} early", attr(C_BAD, True))
@@ -118,17 +119,29 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
                 b.put(b.y, 0, f"+{w.rate:.1f}%/h — clears the window", attr(C_OK))
             elif w.rate is not None:
                 b.put(b.y, 0, "flat", attr(C_DIM))
+            elif w.min_span and w.span < w.min_span:
+                # Say what it is waiting for, in time rather than in samples —
+                # "3.4h of data" explains the silence better than "1 sample".
+                b.put(b.y, 0, f"trend needs {short_dur(w.min_span)} of data "
+                              f"({short_dur(w.span)} so far)", attr(C_DIM))
             else:
-                need = max(1, 3 - w.samples)
-                b.put(b.y, 0, f"learning burn rate ({need} more "
-                              f"sample{'s' if need != 1 else ''})", attr(C_DIM))
+                b.put(b.y, 0, "measuring burn rate…", attr(C_DIM))
             b.y += 2
 
-        # Why the numbers are not moving, stated once rather than per window.
+        # Why the numbers are not moving, stated once rather than per window,
+        # and in terms of things you can see: a clock time and your own open
+        # sessions. "The hook" is taq's word for it, not yours.
         if b.room > 0 and not snap.get("feeders", 0):
-            for chunk in wrap("No running session can report — all of them "
-                              "started before the hook. Open a new session and "
-                              "these go live.", b.iw):
+            n = len(snap["sessions"])
+            since = snap.get("hook", (False, 0.0))[1]
+            when = f" at {reset_label(since)}" if since else ""
+            for chunk in wrap(f"Claude Code only sends these numbers from "
+                              f"sessions opened after taq was set up{when}. "
+                              f"Your {n} open session{'s' if n != 1 else ''} "
+                              f"predate{'' if n != 1 else 's'} that, so nothing "
+                              f"is refreshing them. Open any new Claude Code "
+                              f"session and this goes live within seconds.",
+                              b.iw):
                 b.line(chunk, attr(C_WARN))
             b.skip()
 
