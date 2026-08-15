@@ -401,11 +401,32 @@ def cmd_doctor() -> int:
     return 0
 
 
+def _hook_command() -> str:
+    """The command line Claude Code should run for the status line.
+
+    sys.argv[0] is useless here: bin/taq launches us via `python3 -c`, so argv[0]
+    is the literal string "-c". Resolve something that will actually execute.
+    """
+    import shutil
+
+    exe = shutil.which("taq")
+    if exe and not exe.endswith(".py"):
+        return f"{exe} statusline"
+
+    # Not on PATH. Run the package directly, pointing the interpreter at
+    # whichever directory this copy of taq lives in.
+    pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import taq  # noqa: F401  — importable without help?
+        if pkg_parent in sys.path or "site-packages" in taq.__file__:
+            return f"{sys.executable} -m taq statusline"
+    except ImportError:
+        pass
+    return f"env PYTHONPATH={pkg_parent} {sys.executable} -m taq statusline"
+
+
 def cmd_install() -> int:
-    entry = sys.argv[0]
-    cmd = (f"{sys.executable} -m taq statusline"
-           if entry.endswith(".py") or "-m" in entry
-           else f"{os.path.abspath(entry)} statusline")
+    cmd = _hook_command()
 
     settings = {}
     if paths.CLAUDE_SETTINGS.exists():
@@ -414,16 +435,30 @@ def cmd_install() -> int:
         except ValueError:
             print(f"! {paths.CLAUDE_SETTINGS} is not valid JSON — not touching it")
             return 1
+        # Never clobber an existing backup. Running install twice would
+        # otherwise overwrite the pristine copy with an already-modified one,
+        # so "restore the backup" would restore the problem.
         backup = paths.CLAUDE_SETTINGS.with_suffix(".json.taq-backup")
-        backup.write_text(json.dumps(settings, indent=2))
-        print(f"  backed up existing settings to {backup}")
+        if backup.exists():
+            print(f"  keeping earlier backup at {backup}")
+        else:
+            backup.write_text(json.dumps(settings, indent=2))
+            print(f"  backed up existing settings to {backup}")
 
-    if "statusLine" in settings:
-        print("! settings.json already defines a statusLine:")
-        print(f"    {json.dumps(settings['statusLine'])}")
-        print("  taq will not overwrite it. Add this to your own script instead:")
-        print(f"    {cmd} >/dev/null")
-        return 1
+    existing = settings.get("statusLine")
+    if existing:
+        # Replacing our own entry is a repair, not an overwrite — an earlier
+        # version of this command could write a broken path with no "taq" in
+        # it at all, so identify ours by the subcommand it invokes.
+        prev = str(existing.get("command", "")) if isinstance(existing, dict) else ""
+        mine = prev.split()[-1:] == ["statusline"] or "taq" in prev
+        if not mine:
+            print("! settings.json already defines a statusLine:")
+            print(f"    {json.dumps(existing)}")
+            print("  taq will not overwrite it. Add this to your own script instead:")
+            print(f"    {cmd} >/dev/null")
+            return 1
+        print(f"  replacing existing taq statusLine: {existing.get('command')}")
 
     settings["statusLine"] = {"type": "command", "command": cmd, "refreshInterval": 10}
     paths.CLAUDE_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
