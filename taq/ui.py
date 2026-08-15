@@ -100,7 +100,18 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
                   attr(C_DIM))
             b.y += 1
 
-            if w.eta is not None and w.will_exhaust:
+            # A reading is only as current as the last session that reported.
+            # Showing a frozen number with no age is how you end up trusting
+            # 44% while the web page says 49%.
+            feeders = snap.get("feeders", 0)
+            if w.stale_for > 180:
+                if feeders:
+                    b.put(b.y, 0, f"⚠ {short_dur(w.stale_for)} old "
+                                  f"(≥ this now)", attr(C_WARN))
+                else:
+                    b.put(b.y, 0, f"⚠ frozen — {short_dur(w.stale_for)} old, "
+                                  f"no live session reporting", attr(C_BAD, True))
+            elif w.eta is not None and w.will_exhaust:
                 b.put(b.y, 0, f"⚠ hits the cap ~{clock(w.eta)}, "
                               f"{short_dur(w.resets_at - w.eta)} early", attr(C_BAD, True))
             elif w.rate is not None and w.rate > 0.05:
@@ -112,6 +123,14 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
                 b.put(b.y, 0, f"learning burn rate ({need} more "
                               f"sample{'s' if need != 1 else ''})", attr(C_DIM))
             b.y += 2
+
+        # Why the numbers are not moving, stated once rather than per window.
+        if b.room > 0 and not snap.get("feeders", 0):
+            for chunk in wrap("No running session can report — all of them "
+                              "started before the hook. Open a new session and "
+                              "these go live.", b.iw):
+                b.line(chunk, attr(C_WARN))
+            b.skip()
 
         # The web page also shows a per-model weekly bar (Fable). That number is
         # not in the statusline payload, and saying so beats quietly omitting it.

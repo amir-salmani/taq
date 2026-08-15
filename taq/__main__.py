@@ -61,6 +61,7 @@ class App:
         self._split: list = []
         self._plan: str = ""
         self._hook: tuple = (False, 0.0)
+        self._feeders: int = 0
         self._detail = None
 
     def _due(self, key: str, every: float, force: bool, now: float) -> bool:
@@ -108,6 +109,10 @@ class App:
 
         if self._due("sessions", SESSIONS_EVERY, force, now):
             self._sessions = usage.live_sessions()
+            # Sessions capable of feeding the hook: ones that started after it
+            # was installed. Zero of them means the quota numbers cannot move.
+            self._feeders = sum(1 for s in self._sessions
+                                if s.started_at >= self._hook[1] > 0)
 
         vitals = self.monitor.sample()
         if any(s.busy for s in self._sessions) or vitals.cpu_pct > 25:
@@ -125,6 +130,7 @@ class App:
             "windows": self._windows,
             "plan": self._plan,
             "hook": self._hook,
+            "feeders": self._feeders,
             "detail": self._detail,
             "sessions": self._sessions,
             "projects": self._projects,
