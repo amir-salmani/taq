@@ -119,8 +119,48 @@ The method is just picking the cheap interface every time:
 - **Line-at-a-time parsing**, because reading a 50 MB transcript whole and
   splitting it costs ~100 MB of peak RSS — the entire budget.
 
+## What the panels show
+
+**Claude** — plan tier, and the two limits using the same words as the web usage
+page ("Current session", "Weekly · all models") so the screens can be compared
+without translating. Plus a burn-rate projection, live sessions, and output
+tokens per project.
+
+**Docker** — containers grouped by compose project, with health and live
+CPU/memory, and a detail pane for whichever row the cursor is on: image, state,
+uptime, restart count and policy, CPU/memory/network/disk IO, pids, published
+ports, networks and IPs, mounts, and the command. Almost all of it comes from
+the list response already being fetched; only restart count, start time and
+policy need an inspect, and only for that one row.
+
+**System** — CPU with a braille history plot and per-core meters, memory, swap,
+network, disks, temperature — and power: charge, draw in watts, and **time left
+computed from the actual current draw** rather than a vendor guess, plus battery
+health against design capacity and cycle count.
+
+**Backlight** — brightness, and what it costs you. taq records the machine's
+power draw at each brightness level (only while on battery, and only when the
+CPU is quiet, since a busy core swings power by 20W and would drown a 2W
+backlight difference), then tells you what another level would buy:
+
+```
+LCD 60%  █████████████████▌░░░░░░░░░░░
+    at 30%: 7.1W  +1h20m
+```
+
+That number is measured on your hardware, not modelled. It needs a few idle
+samples at more than one brightness level before it will say anything, and it
+persists across runs in `~/.local/state/taq/power.json`.
+
 ## Limits worth knowing
 
+- **The web usage page shows a per-model weekly bar (Fable) that taq cannot.**
+  The statusline payload carries only `five_hour` and `seven_day`; there is no
+  per-model breakdown in it. The panel says so rather than quietly omitting it.
+  The plan tier comes from `~/.claude.json`, which is ordinary config — taq
+  never opens `~/.claude/.credentials.json`, and makes no API calls.
+- The statusline hook only activates for sessions started **after** it is
+  installed. `settings.json` is read at session start.
 - The stale-process scan reads `/proc/<pid>/environ`, which is readable only for
   your own uid. System services are invisible to it, and it does not pretend
   otherwise.

@@ -11,6 +11,7 @@ import curses
 import time
 
 from . import coherence as coh
+from . import quota
 from .widgets import (Box, C_ACCENT, C_BAD, C_DIM, C_FOCUS, C_HEAD, C_OK,
                       C_TEXT, C_WARN, attr, draw_graph, grad, human_bytes,
                       human_count, meter, short_dur, spark, wrap)
@@ -54,6 +55,11 @@ class State:
 
 def panel_claude(b: Box, snap: dict, st: State) -> None:
     windows = snap["windows"]
+    if plan := snap.get("plan"):
+        b.put(b.y, 0, "Plan usage limits", attr(C_HEAD, True))
+        b.put(b.y, 18, plan, attr(C_ACCENT, True))
+        b.y += 1
+        b.skip()
     if not windows:
         b.line("no rate-limit data yet", attr(C_WARN))
         b.skip()
@@ -63,30 +69,40 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
             b.line(chunk, attr(C_DIM))
         b.skip()
     else:
-        bar_w = max(8, min(26, b.iw - 20))
-        for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
+        bar_w = max(8, min(30, b.iw - 12))
+        for key in ("five_hour", "seven_day"):
             w = windows.get(key)
-            if not w or b.room < 2:
+            if not w or b.room < 3:
                 continue
-            b.put(b.y, 0, label, attr(C_TEXT, True))
-            meter(b, b.y, 3, bar_w, w.used / 100.0, f"{w.used:5.1f}%")
+            # Same words the web usage page uses, so the two can be compared
+            # without translating "5h" into "current session" in your head.
+            b.put(b.y, 0, quota.WINDOW_LABELS[key], attr(C_TEXT, True))
+            b.put(b.y, b.iw - 9, f"{w.used:.0f}% used", grad(w.used / 100, True))
+            b.y += 1
+            meter(b, b.y, 0, bar_w, w.used / 100.0)
             b.y += 1
 
-            b.put(b.y, 3, f"resets {clock(w.resets_at)} · in {short_dur(w.resets_in)}",
+            b.put(b.y, 0, f"resets {reset_label(w.resets_at)} · in {short_dur(w.resets_in)}",
                   attr(C_DIM))
             b.y += 1
 
             if w.eta is not None and w.will_exhaust:
-                b.put(b.y, 3, f"⚠ cap ~{clock(w.eta)} — {short_dur(w.resets_at - w.eta)} early",
-                      attr(C_BAD, True))
+                b.put(b.y, 0, f"⚠ hits the cap ~{clock(w.eta)}, "
+                              f"{short_dur(w.resets_at - w.eta)} early", attr(C_BAD, True))
             elif w.rate is not None and w.rate > 0.05:
-                b.put(b.y, 3, f"+{w.rate:.1f}%/h — clears the window", attr(C_OK))
+                b.put(b.y, 0, f"+{w.rate:.1f}%/h — clears the window", attr(C_OK))
             elif w.rate is not None:
-                b.put(b.y, 3, "flat", attr(C_DIM))
+                b.put(b.y, 0, "flat", attr(C_DIM))
             else:
-                b.put(b.y, 3, f"learning burn rate ({max(0, 3 - w.samples)} more)",
+                b.put(b.y, 0, f"learning burn rate ({max(0, 3 - w.samples)} more samples)",
                       attr(C_DIM))
             b.y += 2
+
+        # The web page also shows a per-model weekly bar (Fable). That number is
+        # not in the statusline payload, and saying so beats quietly omitting it.
+        if b.room > 0:
+            b.line("per-model limits are not exposed to local tools", attr(C_DIM))
+            b.skip()
 
     if split := snap["model_split"]:
         total = sum(v for _, v in split) or 1
@@ -202,17 +218,23 @@ def panel_docker(b: Box, snap: dict, st: State) -> None:
     focused = st.focus == DOCKER
     sel = min(st.sel[DOCKER], len(d.containers) - 1)
 
-    # Keep the selection on screen.
-    start = max(0, sel - b.ih + 2) if sel >= b.ih - 1 else 0
-    shown = d.containers[start:start + b.ih]
+    # Split the box: list on top, details for the selected row underneath.
+    # Reserve room for details only when there is enough height to be useful.
+    detail_h = 0
+    if b.ih >= 14:
+        detail_h = min(14, max(8, b.ih - len(d.containers) - 3))
+    list_h = b.ih - detail_h
+
+    start = max(0, sel - list_h + 2) if sel >= list_h else 0
+    shown = d.containers[start:start + list_h]
 
     wide = b.iw >= 62
     last_project = None
     for i, c in enumerate(shown, start=start):
-        if b.room <= 0:
+        if b.y >= list_h:
             break
         if c.project != last_project and c.project:
-            if b.room <= 1:
+            if b.y >= list_h - 1:
                 break
             b.put(b.y, 0, f"▼ {c.project}", attr(C_HEAD, True))
             b.y += 1
@@ -251,8 +273,77 @@ def panel_docker(b: Box, snap: dict, st: State) -> None:
             b.put(b.y, col, (c.status or c.state)[: b.iw - col], attr(ds))
         b.y += 1
 
-    if start + len(shown) < len(d.containers):
+    if start + len(shown) < len(d.containers) and b.y < list_h:
         b.line(f"  +{len(d.containers) - start - len(shown)} more ↓", attr(C_DIM))
+
+    if detail_h > 0:
+        b.y = list_h
+        _docker_detail(b, d.containers[sel], snap.get("detail"), b.ih)
+
+
+def _docker_detail(b: Box, c, det, bottom: int) -> None:
+    """Everything known about the selected container. Nearly all of it comes
+    from the list response we already have; only restart count, start time and
+    policy need the inspect call, and only for this one row."""
+    b.put(b.y, 0, "─" * b.iw, attr(C_DIM))
+    b.y += 1
+
+    b.put(b.y, 0, c.name[:28], attr(C_ACCENT, True))
+    if c.service:
+        b.put(b.y, 30, f"service {c.service}", attr(C_DIM))
+    b.put(b.y, b.iw - 13, c.short, attr(C_DIM))
+    b.y += 1
+
+    def row(label: str, value: str, a: int = 0) -> None:
+        if b.y >= bottom or not value:
+            return
+        b.put(b.y, 0, label[:10].ljust(10), attr(C_DIM))
+        b.put(b.y, 11, value[: max(0, b.iw - 11)], a or attr(C_TEXT))
+        b.y += 1
+
+    row("image", c.image)
+    row("state", f"{c.state} · {c.status}",
+        attr(C_OK if c.up else C_DIM))
+
+    if c.health:
+        hs = {"healthy": C_OK, "unhealthy": C_BAD}.get(c.health, C_WARN)
+        extra = f" · failing streak {det.health_failing}" if det and det.health_failing else ""
+        row("health", c.health + extra, attr(hs, True))
+
+    if det:
+        bits = []
+        if det.started_at:
+            bits.append(f"started {det.started_at}")
+        if det.restart_count:
+            bits.append(f"{det.restart_count} restarts")
+        if det.restart_policy and det.restart_policy != "no":
+            bits.append(det.restart_policy)
+        row("run", " · ".join(bits))
+        if not c.up and det.exit_code is not None:
+            row("exit", f"code {det.exit_code}"
+                       + (" · OOM KILLED" if det.oom_killed else "")
+                       + (f" · {det.finished_at}" if det.finished_at else ""),
+                attr(C_BAD if det.exit_code else C_DIM, bool(det.exit_code)))
+
+    if c.up:
+        row("cpu / mem", f"{c.cpu_pct:.1f}%   {human_bytes(c.mem_bytes or 0)}"
+                        + (f" / {human_bytes(c.mem_limit)}" if c.mem_limit else "")
+                        + (f"  ({c.mem_pct:.0f}%)" if c.mem_pct else "")
+            if c.cpu_pct is not None else "measuring…")
+        row("net", f"↓{human_bytes(c.net_rx)}  ↑{human_bytes(c.net_tx)}")
+        row("disk", f"read {human_bytes(c.blk_read)}  write {human_bytes(c.blk_write)}")
+        row("pids", str(c.pids) if c.pids else "")
+
+    row("ports", ", ".join(c.port_list) or "none published")
+    for i, (net, ip) in enumerate(c.networks.items()):
+        row("network" if i == 0 else "", f"{net}  {ip}")
+    for i, m in enumerate(c.mounts[:3]):
+        row("mounts" if i == 0 else "", m)
+    if len(c.mounts) > 3:
+        row("", f"+{len(c.mounts) - 3} more")
+    row("command", c.command)
+    if det and det.health_log:
+        row("health log", det.health_log[-1], attr(C_WARN))
 
 
 def panel_system(b: Box, snap: dict, st: State) -> None:
@@ -268,7 +359,12 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
         b.put(b.y, 19, f"load {v.load[0]:.2f}", attr(C_DIM))
     b.y += 1
 
-    gh = 3 if b.room > 12 else 2
+    # The panel has more to say than it has rows. The graph and the per-core
+    # grid are the two things that scale down gracefully, so they give up
+    # height first — losing a plot row costs resolution, losing the battery
+    # row costs the number you actually opened this for.
+    tight = b.ih < 24
+    gh = 2 if tight else 3
     if b.room > gh:
         draw_graph(b, b.y, 0, b.iw, gh, mon.cpu_history, vmax=100.0)
         b.y += gh
@@ -281,7 +377,8 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
         # even though it is correct. The meter now separates the cells.
         cols = 2 if b.iw < 46 else 4
         cell = b.iw // cols
-        for row_start in range(0, min(len(v.per_core), cols * 2), cols):
+        core_rows = 1 if tight else 2
+        for row_start in range(0, min(len(v.per_core), cols * core_rows), cols):
             if b.room <= 1:
                 break
             for j in range(cols):
@@ -331,11 +428,52 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
                   f"{human_bytes(dk.total - dk.used)} free")
             b.y += 1
 
+    p = v.power
+    if p.present and p.pct is not None and b.room > 2:
+        b.skip()
+        icon = "⚡" if p.charging else "🔋"
+        b.put(b.y, 0, "PWR", attr(C_HEAD, True))
+        b.put(b.y, 4, f"{icon}{p.pct:.0f}%", grad(1.0 - p.pct / 100, True))
+        if p.watts:
+            b.put(b.y, 13, f"{p.watts:.1f}W", attr(C_ACCENT))
+        if p.seconds_left:
+            word = "to full" if p.charging else "left"
+            b.put(b.y, 21, f"{short_dur(p.seconds_left)} {word}",
+                  attr(C_OK if p.charging or p.seconds_left > 3600 else C_WARN, True))
+        b.y += 1
+
+        if b.room > 0:
+            meter(b, b.y, 0, max(6, b.iw - 18), p.pct / 100.0,
+                  f"health {p.health_pct:.0f}%" if p.health_pct else "")
+            b.y += 1
+
+        # Brightness, and what it is actually costing — measured at this
+        # machine's own idle draw, not guessed from a spec sheet.
+        if p.brightness_pct is not None and b.room > 0:
+            b.put(b.y, 0, "LCD", attr(C_HEAD, True))
+            b.put(b.y, 4, f"{p.brightness_pct:.0f}%", attr(C_TEXT, True))
+            bw = max(5, b.iw - 30)
+            meter(b, b.y, 9, bw, p.brightness_pct / 100.0)
+            b.y += 1
+
+            if b.room > 0:
+                delta = p.delta_seconds
+                if delta is not None and p.predicted_at_pct is not None:
+                    sign = "+" if delta >= 0 else "−"
+                    b.put(b.y, 4, f"at {p.predicted_at_pct:.0f}%: "
+                                  f"{p.predicted_watts:.1f}W  {sign}{short_dur(abs(delta))}",
+                          attr(C_OK if delta >= 0 else C_WARN))
+                elif p.charging:
+                    b.put(b.y, 4, "on AC — measuring pauses", attr(C_DIM))
+                else:
+                    b.put(b.y, 4, "learning draw at this level…", attr(C_DIM))
+                b.y += 1
+
     if b.room > 1:
         b.skip()
         bits = [f"up {short_dur(v.uptime)}", f"{v.procs} procs"]
-        if v.battery_pct is not None:
-            bits.append(f"{'⚡' if v.battery_charging else '🔋'}{v.battery_pct:.0f}%")
+        if p.cycles:
+            bits.append(f"{p.cycles} cycles")
         b.line("  ".join(bits), attr(C_DIM))
 
 
@@ -505,6 +643,18 @@ def _safe(win, y: int, x: int, text: str, a: int) -> None:
 
 def clock(ts: float) -> str:
     return time.strftime("%H:%M", time.localtime(ts))
+
+
+def reset_label(ts: float) -> str:
+    """A reset later today needs only a time; one days away needs the day, the
+    way the web page writes "Fri 6:30 PM"."""
+    now = time.localtime()
+    then = time.localtime(ts)
+    if (then.tm_year, then.tm_yday) == (now.tm_year, now.tm_yday):
+        return time.strftime("%H:%M", then)
+    if ts - time.time() < 6 * 86400:
+        return time.strftime("%a %H:%M", then)
+    return time.strftime("%d %b %H:%M", then)
 
 
 def short_model(name: str) -> str:

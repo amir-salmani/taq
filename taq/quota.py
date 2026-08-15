@@ -28,6 +28,33 @@ from . import paths
 
 WINDOWS = ("five_hour", "seven_day")
 
+# The web UI calls these "Current session" and "Weekly · All models". Using its
+# words means the two screens can be compared without translating.
+WINDOW_LABELS = {"five_hour": "Current session", "seven_day": "Weekly · all models"}
+
+
+def read_plan() -> str:
+    """Subscription tier, e.g. "Max (5x)".
+
+    Read from ~/.claude.json, which is ordinary config. The same value also sits
+    in ~/.claude/.credentials.json alongside OAuth tokens — taq does not open
+    that file, because a status display has no business near your credentials.
+    """
+    try:
+        d = json.loads((paths.HOME / ".claude.json").read_text())
+    except (OSError, ValueError):
+        return ""
+
+    acct = d.get("oauthAccount") or {}
+    tier = acct.get("organizationRateLimitTier") or acct.get("userRateLimitTier") or ""
+    if not tier:
+        return ""
+
+    t = str(tier).replace("default_claude_", "").replace("default_", "")
+    if t.startswith("max_"):
+        return f"Max ({t[4:]})"
+    return t.replace("_", " ").title()
+
 
 # -----------------------------------------------------------------------------
 # Capture (statusline hook side)

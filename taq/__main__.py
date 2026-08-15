@@ -59,6 +59,8 @@ class App:
         self._sessions: list = []
         self._projects: list = []
         self._split: list = []
+        self._plan: str = ""
+        self._detail = None
 
     def _due(self, key: str, every: float, force: bool, now: float) -> bool:
         if force or now - self._at.get(key, 0.0) >= every:
@@ -96,6 +98,11 @@ class App:
 
         if self._due("quota", QUOTA_EVERY, force, now):
             self._windows = quota.read_windows()
+            self._plan = quota.read_plan()
+
+        # Inspect only the container the cursor is on.
+        sel = self.selected_container()
+        self._detail = self.docker.detail(sel.cid) if sel else None
 
         if self._due("sessions", SESSIONS_EVERY, force, now):
             self._sessions = usage.live_sessions()
@@ -114,6 +121,8 @@ class App:
             "vitals": vitals,
             "monitor": self.monitor,
             "windows": self._windows,
+            "plan": self._plan,
+            "detail": self._detail,
             "sessions": self._sessions,
             "projects": self._projects,
             "model_split": self._split,
@@ -372,15 +381,32 @@ def cmd_doctor() -> int:
         print("  none")
 
     windows = quota.read_windows()
-    print(f"\nrate limits ({len(windows)} window(s) reporting)")
+    plan = quota.read_plan()
+    print(f"\nrate limits ({len(windows)} window(s) reporting)"
+          + (f"   plan: {plan}" if plan else ""))
     if not windows:
-        print("  none — statusline hook not installed, or no session has run")
-        print("  fix: taq install")
+        # Distinguish "never set up" from "set up, but nothing has fed it yet".
+        # They look identical here and have completely different fixes.
+        hooked = False
+        try:
+            sl = json.loads(paths.CLAUDE_SETTINGS.read_text()).get("statusLine") or {}
+            hooked = "statusline" in str(sl.get("command", "")).lower()
+        except (OSError, ValueError):
+            pass
+        if hooked:
+            print("  none yet — the hook is installed but no session has reported.")
+            print("  settings.json is read at session start, so sessions already")
+            print("  running will never feed it. Start a new one.")
+        else:
+            print("  none — statusline hook not installed")
+            print("  fix: taq install")
     for name, w in windows.items():
         eta = f", cap ~{ui.clock(w.eta)}" if w.eta else ""
         rate = f", {w.rate:+.2f}%/h" if w.rate is not None else ", rate unknown"
-        print(f"  {name:<10} {w.used:5.1f}%  resets {ui.clock(w.resets_at)}"
-              f"{rate}{eta}  [{w.samples} samples]")
+        print(f"  {quota.WINDOW_LABELS.get(name, name):<21} {w.used:5.1f}%  "
+              f"resets {ui.reset_label(w.resets_at)}{rate}{eta}  [{w.samples} samples]")
+    if windows:
+        print("  per-model limits (e.g. Fable) are not in the statusline payload")
 
     d = dockerd.Client().view()
     print(f"\ndocker    {'ok ' + d.version if d.available else 'unavailable — ' + d.reason}")
@@ -395,6 +421,26 @@ def cmd_doctor() -> int:
     print(f"\nsystem    cpu {v.cpu_pct:.0f}%  mem {v.mem_pct:.0f}% "
           f"({widgets.human_bytes(v.mem_used)}/{widgets.human_bytes(v.mem_total)})"
           f"  up {widgets.short_dur(v.uptime)}")
+
+    p = v.power
+    if p.present:
+        left = (f"  {widgets.short_dur(p.seconds_left)} "
+                f"{'to full' if p.charging else 'left'}") if p.seconds_left else ""
+        print(f"power     {p.pct:.0f}%  {p.status}"
+              + (f"  {p.watts:.2f}W" if p.watts else "") + left)
+        print(f"          health {p.health_pct:.1f}% "
+              f"({p.full_wh:.1f}/{p.design_wh:.1f}Wh)  {p.cycles or '?'} cycles"
+              if p.health_pct else "")
+    if p.brightness_pct is not None:
+        line = f"backlight {p.brightness_pct:.0f}%"
+        if p.predicted_watts and p.delta_seconds is not None:
+            line += (f"  — measured: {p.predicted_at_pct:.0f}% draws "
+                     f"{p.predicted_watts:.2f}W "
+                     f"({widgets.short_dur(abs(p.delta_seconds))} "
+                     f"{'more' if p.delta_seconds >= 0 else 'less'} runtime)")
+        else:
+            line += "  — no comparison level measured yet"
+        print(line)
 
     idx = usage.TranscriptIndex()
     idx.refresh()

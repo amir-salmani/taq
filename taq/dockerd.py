@@ -20,6 +20,7 @@ import json
 import os
 import socket
 import time
+from pathlib import Path
 from dataclasses import dataclass, field
 
 SOCKET_PATHS = (
@@ -48,6 +49,19 @@ class Container:
     cpu_pct: float | None = None
     mem_bytes: int | None = None
     mem_limit: int | None = None
+    # Detail, all of it already present in the list response — no extra calls.
+    created: int = 0
+    command: str = ""
+    service: str | None = None          # compose service name
+    port_list: list[str] = field(default_factory=list)
+    networks: dict[str, str] = field(default_factory=dict)   # name -> ip
+    mounts: list[str] = field(default_factory=list)
+    # From the stats sample we already take for CPU and memory.
+    net_rx: int = 0
+    net_tx: int = 0
+    blk_read: int = 0
+    blk_write: int = 0
+    pids: int = 0
 
     @property
     def up(self) -> bool:
@@ -63,6 +77,22 @@ class Container:
             return None
         return self.mem_bytes / self.mem_limit * 100.0
 
+
+@dataclass
+class Detail:
+    """The few fields that genuinely need an inspect call. Fetched only for the
+    container the cursor is on, so it costs one request regardless of how many
+    containers exist."""
+    restart_count: int = 0
+    restart_policy: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    exit_code: int | None = None
+    oom_killed: bool = False
+    pid: int = 0
+    env_count: int = 0
+    health_log: list[str] = field(default_factory=list)
+    health_failing: int = 0
 
 @dataclass
 class DockerView:
@@ -94,9 +124,10 @@ class Client:
         self.version = ""
         self.reason = "" if self.path else "no docker socket found"
         self._stats_at = 0.0
-        self._stats: dict[str, tuple[float, int, int]] = {}
+        self._stats: dict[str, dict] = {}
         # cid -> (when, cpu_total_ns, system_total_ns, ncpu), our own baseline
         self._counters: dict[str, tuple[float, int, int, int]] = {}
+        self._details: dict[str, tuple[float, 'Detail']] = {}
 
     @staticmethod
     def _find_socket() -> str | None:
@@ -161,7 +192,9 @@ class Client:
             self._refresh_stats([c for c in containers if c.up])
         for c in containers:
             if s := self._stats.get(c.cid):
-                c.cpu_pct, c.mem_bytes, c.mem_limit = s
+                c.cpu_pct, c.mem_bytes, c.mem_limit = s["cpu"], s["mem"], s["mem_limit"]
+                c.net_rx, c.net_tx = s["rx"], s["tx"]
+                c.blk_read, c.blk_write, c.pids = s["blk_read"], s["blk_write"], s["pids"]
 
         return DockerView(True, "", self.version, containers)
 
@@ -171,16 +204,36 @@ class Client:
         labels = c.get("Labels") or {}
         ports = []
         for p in c.get("Ports") or []:
-            pub, priv = p.get("PublicPort"), p.get("PrivatePort")
-            ports.append(f"{pub}→{priv}" if pub else str(priv))
-        health = None
+            pub, priv, proto = p.get("PublicPort"), p.get("PrivatePort"), p.get("Type", "tcp")
+            ip = p.get("IP") or ""
+            if pub:
+                host = f"{ip}:" if ip and ip not in ("0.0.0.0", "::") else ""
+                ports.append(f"{host}{pub}→{priv}/{proto}")
+            else:
+                ports.append(f"{priv}/{proto}")
+        ports = list(dict.fromkeys(ports))
+
         status = c.get("Status", "")
-        if "(healthy)" in status:
-            health = "healthy"
-        elif "(unhealthy)" in status:
-            health = "unhealthy"
-        elif "(health: starting)" in status:
-            health = "starting"
+        health = None
+        for marker, label in (("(healthy)", "healthy"), ("(unhealthy)", "unhealthy"),
+                              ("(health: starting)", "starting")):
+            if marker in status:
+                health = label
+                break
+
+        nets = {}
+        for nname, nd in ((c.get("NetworkSettings") or {}).get("Networks") or {}).items():
+            nets[nname] = (nd or {}).get("IPAddress") or ""
+
+        mounts = []
+        for m in c.get("Mounts") or []:
+            dest = m.get("Destination", "")
+            src = m.get("Name") or m.get("Source") or ""
+            kind = m.get("Type", "")
+            rw = "rw" if m.get("RW") else "ro"
+            if kind == "bind":
+                src = src.replace(str(Path.home()), "~")
+            mounts.append(f"{src} → {dest} [{kind},{rw}]")
 
         return Container(
             cid=c.get("Id", ""),
@@ -189,9 +242,48 @@ class Client:
             state=c.get("State", "?"),
             status=status,
             project=labels.get("com.docker.compose.project"),
-            ports=", ".join(dict.fromkeys(ports))[:28],
+            service=labels.get("com.docker.compose.service"),
+            ports=", ".join(ports)[:28],
+            port_list=ports,
             health=health,
+            created=int(c.get("Created") or 0),
+            command=(c.get("Command") or "").replace("\n", " ").strip(),
+            networks=nets,
+            mounts=mounts,
         )
+
+    def detail(self, cid: str) -> Detail | None:
+        """Inspect one container. Cached briefly so holding the cursor still
+        on a row does not re-request every frame."""
+        hit = self._details.get(cid)
+        if hit and time.time() - hit[0] < 4.0:
+            return hit[1]
+
+        d = self._json(f"/containers/{cid}/json", timeout=3.0)
+        if not isinstance(d, dict):
+            return None
+        st = d.get("State") or {}
+        hc = st.get("Health") or {}
+        policy = (d.get("HostConfig") or {}).get("RestartPolicy") or {}
+
+        det = Detail(
+            restart_count=int(d.get("RestartCount") or 0),
+            restart_policy=policy.get("Name") or "",
+            started_at=_short_time(st.get("StartedAt")),
+            finished_at=_short_time(st.get("FinishedAt")),
+            exit_code=st.get("ExitCode"),
+            oom_killed=bool(st.get("OOMKilled")),
+            pid=int(st.get("Pid") or 0),
+            env_count=len((d.get("Config") or {}).get("Env") or []),
+            health_failing=int(hc.get("FailingStreak") or 0),
+            health_log=[
+                (e.get("Output") or "").strip().splitlines()[0][:120]
+                for e in (hc.get("Log") or [])[-3:]
+                if (e.get("Output") or "").strip()
+            ],
+        )
+        self._details[cid] = (time.time(), det)
+        return det
 
     def _refresh_stats(self, running: list[Container]) -> None:
         """One request per container, so: slow cadence and a hard cap.
@@ -213,7 +305,7 @@ class Client:
         elapsed = now - self._stats_at
         self._stats_at = now
 
-        fresh: dict[str, tuple[float, int, int]] = {}
+        fresh: dict[str, dict] = {}
         counters: dict[str, tuple[float, int, int, int]] = {}
 
         for c in running[:STATS_MAX]:
@@ -241,8 +333,22 @@ class Client:
                     # Older daemons omit system_cpu_usage in one-shot mode.
                     # total_usage is in nanoseconds, so fall back to wall time.
                     pct = d_total / (elapsed * 1e9) * 100.0
-            fresh[c.cid] = (max(0.0, pct), _mem_used(d),
-                            int((d.get("memory_stats") or {}).get("limit") or 0))
+            nets = d.get("networks") or {}
+            blk = {"read": 0, "write": 0}
+            for e in ((d.get("blkio_stats") or {}).get("io_service_bytes_recursive") or []):
+                op = str(e.get("op", "")).lower()
+                if op in blk:
+                    blk[op] += int(e.get("value") or 0)
+            fresh[c.cid] = {
+                "cpu": max(0.0, pct),
+                "mem": _mem_used(d),
+                "mem_limit": int((d.get("memory_stats") or {}).get("limit") or 0),
+                "rx": sum(int((n or {}).get("rx_bytes") or 0) for n in nets.values()),
+                "tx": sum(int((n or {}).get("tx_bytes") or 0) for n in nets.values()),
+                "blk_read": blk["read"],
+                "blk_write": blk["write"],
+                "pids": int((d.get("pids_stats") or {}).get("current") or 0),
+            }
 
         self._counters = counters
         self._stats = fresh
@@ -302,3 +408,16 @@ def _demux(raw: bytes) -> list[str]:
         out.extend(raw[i:i + size].decode("utf-8", "replace").splitlines())
         i += size
     return out
+
+
+def _short_time(iso: str | None) -> str:
+    """Docker hands back RFC3339 with nanoseconds and a zero value for "never"."""
+    if not iso or iso.startswith("0001-01-01"):
+        return ""
+    try:
+        from datetime import datetime
+        t = datetime.fromisoformat(iso.replace("Z", "+00:00")[:26] + "+00:00"
+                                   if len(iso) > 26 else iso.replace("Z", "+00:00"))
+        return t.astimezone().strftime("%d %b %H:%M")
+    except (ValueError, TypeError):
+        return iso[:16].replace("T", " ")

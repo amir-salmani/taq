@@ -6,6 +6,7 @@ holds the previous sample. One instance, polled on the app's tick.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections import deque
@@ -26,6 +27,46 @@ class Disk:
 
 
 @dataclass
+class Power:
+    """Battery and backlight, including the one number laptops never show you:
+    how long you actually have left at the rate you are drawing right now."""
+    present: bool = False
+    pct: float | None = None
+    status: str = ""              # Discharging | Charging | Full | Not charging
+    ac_online: bool | None = None
+    watts: float | None = None    # instantaneous draw (or charge rate)
+    energy_wh: float | None = None
+    full_wh: float | None = None
+    design_wh: float | None = None
+    cycles: int | None = None
+    seconds_left: float | None = None   # to empty when discharging, to full when charging
+    brightness_pct: float | None = None
+    # Measured, not modelled: watts observed at other brightness levels.
+    predicted_watts: float | None = None
+    predicted_at_pct: float | None = None
+
+    @property
+    def charging(self) -> bool:
+        return self.status in ("Charging", "Full")
+
+    @property
+    def health_pct(self) -> float | None:
+        if not self.full_wh or not self.design_wh:
+            return None
+        return self.full_wh / self.design_wh * 100.0
+
+    @property
+    def delta_seconds(self) -> float | None:
+        """How much runtime the predicted brightness level would buy (+) or
+        cost (-), at the current charge."""
+        if not (self.predicted_watts and self.energy_wh and self.seconds_left):
+            return None
+        if self.predicted_watts <= 0:
+            return None
+        return (self.energy_wh / self.predicted_watts) * 3600.0 - self.seconds_left
+
+
+@dataclass
 class Vitals:
     cpu_pct: float = 0.0
     per_core: list[float] = field(default_factory=list)
@@ -39,6 +80,7 @@ class Vitals:
     temp_c: float | None = None
     battery_pct: float | None = None
     battery_charging: bool = False
+    power: 'Power' = field(default_factory=lambda: Power())
     uptime: float = 0.0
     procs: int = 0
 
@@ -62,6 +104,7 @@ class Monitor:
         self.disks: list[Disk] = []
         self._disks_at = 0.0
         self._temp_path: str | None | bool = False   # False = not yet looked
+        self.power_model = PowerModel()
 
     def sample(self) -> Vitals:
         v = Vitals()
@@ -179,20 +222,188 @@ class Monitor:
             return None
 
     def _battery(self, v: Vitals) -> None:
-        base = "/sys/class/power_supply"
+        p = read_power()
+        v.power = p
+        v.battery_pct = p.pct
+        v.battery_charging = p.charging
+
+        # Learn what the machine draws at each brightness level, then use that
+        # to predict. Only while discharging (on AC the draw says nothing about
+        # battery life) and only when the CPU is quiet, because a busy core
+        # swings power by 20W and would drown a 2W backlight difference.
+        if p.present and not p.charging and p.watts and p.brightness_pct is not None:
+            if v.cpu_pct < 15:
+                self.power_model.observe(p.brightness_pct, p.watts)
+            pred = self.power_model.predict(p.brightness_pct)
+            if pred:
+                p.predicted_at_pct, p.predicted_watts = pred
+
+
+PSU = "/sys/class/power_supply"
+
+
+def _uv(path: str) -> float | None:
+    """sysfs power values are integers in micro-units."""
+    try:
+        with open(path) as fh:
+            return int(fh.read().strip()) / 1e6
+    except (OSError, ValueError):
+        return None
+
+
+def _txt(path: str) -> str:
+    try:
+        with open(path) as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def read_power() -> Power:
+    p = Power()
+    try:
+        bats = sorted(n for n in os.listdir(PSU) if n.startswith("BAT"))
+        supplies = os.listdir(PSU)
+    except OSError:
+        return p
+
+    for n in supplies:
+        if _txt(f"{PSU}/{n}/type") == "Mains":
+            online = _txt(f"{PSU}/{n}/online")
+            if online in ("0", "1"):
+                p.ac_online = online == "1"
+            break
+
+    p.brightness_pct = _brightness()
+
+    if not bats:
+        return p
+    b = f"{PSU}/{bats[0]}"
+    p.present = _txt(f"{b}/present") != "0"
+    p.status = _txt(f"{b}/status")
+    try:
+        p.pct = float(_txt(f"{b}/capacity"))
+    except ValueError:
+        p.pct = None
+    try:
+        p.cycles = int(_txt(f"{b}/cycle_count")) or None
+    except ValueError:
+        p.cycles = None
+
+    # Two flavours of battery reporting: energy (Wh, µWh) or charge (Ah, µAh).
+    # The charge flavour needs voltage to become watts.
+    energy, full, design, watts = (_uv(f"{b}/energy_now"), _uv(f"{b}/energy_full"),
+                                   _uv(f"{b}/energy_full_design"), _uv(f"{b}/power_now"))
+    if energy is None:
+        charge, cfull = _uv(f"{b}/charge_now"), _uv(f"{b}/charge_full")
+        cdesign, current = _uv(f"{b}/charge_full_design"), _uv(f"{b}/current_now")
+        volts = _uv(f"{b}/voltage_now")
+        if charge is not None and volts:
+            energy = charge * volts
+            full = cfull * volts if cfull else None
+            design = cdesign * volts if cdesign else None
+            watts = current * volts if current else None
+
+    p.energy_wh, p.full_wh, p.design_wh = energy, full, design
+    p.watts = watts if watts and watts > 0 else None
+
+    if p.watts:
+        if p.status == "Discharging" and energy:
+            p.seconds_left = energy / p.watts * 3600.0
+        elif p.status == "Charging" and energy is not None and full:
+            p.seconds_left = max(0.0, (full - energy)) / p.watts * 3600.0
+    return p
+
+
+def _brightness() -> float | None:
+    base = "/sys/class/backlight"
+    try:
+        devs = sorted(os.listdir(base))
+    except OSError:
+        return None
+    for d in devs:
         try:
-            names = [n for n in os.listdir(base) if n.startswith("BAT")]
+            cur = int(_txt(f"{base}/{d}/brightness"))
+            mx = int(_txt(f"{base}/{d}/max_brightness"))
+        except ValueError:
+            continue
+        if mx > 0:
+            return cur / mx * 100.0
+    return None
+
+
+class PowerModel:
+    """Observed watts per brightness bucket, persisted across runs.
+
+    This measures rather than models. Nobody can tell you what your backlight
+    costs from a spec sheet — panels, drivers and ambient sensors differ — but
+    the machine will tell you if you watch it at each level and only compare
+    like with like.
+    """
+
+    BUCKET = 10          # percent
+    KEEP = 40            # samples per bucket
+    MIN_SAMPLES = 6
+
+    def __init__(self, path=None):
+        from . import paths
+        self.path = path or (paths.STATE_DIR / "power.json")
+        self.buckets: dict[int, list[float]] = {}
+        self._dirty = False
+        self._saved_at = 0.0
+        self._load()
+
+    @staticmethod
+    def _key(pct: float) -> int:
+        return int(round(pct / PowerModel.BUCKET) * PowerModel.BUCKET)
+
+    def _load(self) -> None:
+        try:
+            raw = json.loads(self.path.read_text())
+            self.buckets = {int(k): [float(x) for x in v][-self.KEEP:]
+                            for k, v in raw.items()}
+        except (OSError, ValueError, TypeError):
+            self.buckets = {}
+
+    def save(self) -> None:
+        if not self._dirty or time.time() - self._saved_at < 60:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({str(k): v for k, v in self.buckets.items()}))
+            os.replace(tmp, self.path)
+            self._dirty, self._saved_at = False, time.time()
         except OSError:
-            return
-        if not names:
-            return
-        try:
-            with open(f"{base}/{names[0]}/capacity") as fh:
-                v.battery_pct = float(fh.read().strip())
-            with open(f"{base}/{names[0]}/status") as fh:
-                v.battery_charging = fh.read().strip() in ("Charging", "Full")
-        except (OSError, ValueError):
-            v.battery_pct = None
+            pass
+
+    def observe(self, brightness_pct: float, watts: float) -> None:
+        k = self._key(brightness_pct)
+        lst = self.buckets.setdefault(k, [])
+        lst.append(round(watts, 3))
+        if len(lst) > self.KEEP:
+            del lst[: len(lst) - self.KEEP]
+        self._dirty = True
+        self.save()
+
+    def median(self, bucket: int) -> float | None:
+        vals = sorted(self.buckets.get(bucket, []))
+        if len(vals) < self.MIN_SAMPLES:
+            return None
+        return vals[len(vals) // 2]
+
+    def predict(self, current_pct: float) -> tuple[float, float] | None:
+        """Pick the most informative other level we have data for: the dimmest
+        known bucket (biggest saving), or the brightest if we are already at
+        the bottom. Returns (bucket_pct, median_watts)."""
+        cur = self._key(current_pct)
+        known = [b for b in sorted(self.buckets) if self.median(b) is not None]
+        others = [b for b in known if b != cur]
+        if not others:
+            return None
+        target = min(others) if min(others) < cur else max(others)
+        w = self.median(target)
+        return (float(target), w) if w else None
 
 
 def _find_temp() -> str | None:
