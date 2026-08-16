@@ -27,6 +27,38 @@ class Disk:
 
 
 @dataclass
+class Swap:
+    """Swap, split by what it actually costs.
+
+    A single "swap used" number is actively misleading on a zram system. zram
+    is compressed pages held in RAM — reading one back is microseconds. A swap
+    file on disk is a disk trip. Showing "7.6G used" for a machine that is
+    almost entirely in zram reads as an emergency when nothing is wrong.
+    """
+    zram_stored: int = 0        # uncompressed bytes held in zram
+    zram_ram: int = 0           # actual RAM those bytes occupy
+    zram_total: int = 0         # zram device size
+    disk_used: int = 0          # bytes on real disk swap
+    disk_total: int = 0
+    algorithm: str = ""
+
+    @property
+    def has_zram(self) -> bool:
+        return self.zram_total > 0
+
+    @property
+    def ratio(self) -> float | None:
+        if self.zram_stored <= 0 or self.zram_ram <= 0:
+            return None
+        return self.zram_stored / self.zram_ram
+
+    @property
+    def saved(self) -> int:
+        """RAM you would not otherwise have."""
+        return max(0, self.zram_stored - self.zram_ram)
+
+
+@dataclass
 class Power:
     """Battery and backlight, including the one number laptops never show you:
     how long you actually have left at the rate you are drawing right now."""
@@ -81,6 +113,8 @@ class Vitals:
     battery_pct: float | None = None
     battery_charging: bool = False
     power: 'Power' = field(default_factory=lambda: Power())
+    swap: 'Swap' = field(default_factory=lambda: Swap())
+    mem_pressure: float | None = None
     uptime: float = 0.0
     procs: int = 0
 
@@ -113,6 +147,8 @@ class Monitor:
         self._net(v)
         self._misc(v)
         v.temp_c = self._temp()
+        v.swap = read_swap()
+        v.mem_pressure = read_pressure()
         self._battery(v)
 
         self.cpu_history.append(v.cpu_pct)
@@ -404,6 +440,64 @@ class PowerModel:
         target = min(others) if min(others) < cur else max(others)
         w = self.median(target)
         return (float(target), w) if w else None
+
+
+def read_swap() -> Swap:
+    """Split swap into zram and disk. /proc/swaps names the devices;
+    /sys/block/zram*/mm_stat gives the compression that makes zram cheap."""
+    s = Swap()
+    try:
+        with open("/proc/swaps") as fh:
+            rows = fh.read().splitlines()[1:]
+    except OSError:
+        return s
+
+    for row in rows:
+        f = row.split()
+        if len(f) < 4:
+            continue
+        name, total_kb, used_kb = f[0], int(f[2]) * 1024, int(f[3]) * 1024
+        if "zram" in name:
+            s.zram_total += total_kb
+        else:
+            s.disk_total += total_kb
+            s.disk_used += used_kb
+
+    import glob
+    for dev in sorted(glob.glob("/sys/block/zram*")):
+        try:
+            with open(f"{dev}/mm_stat") as fh:
+                parts = fh.read().split()
+            s.zram_stored += int(parts[0])
+            s.zram_ram += int(parts[2])
+        except (OSError, ValueError, IndexError):
+            continue
+        if not s.algorithm:
+            try:
+                with open(f"{dev}/comp_algorithm") as fh:
+                    raw = fh.read()
+                s.algorithm = raw[raw.find("[") + 1: raw.find("]")] or ""
+            except (OSError, ValueError):
+                pass
+    return s
+
+
+def read_pressure() -> float | None:
+    """PSI: the share of time something stalled waiting on memory, over 60s.
+
+    The honest answer to "am I short on RAM". A machine can look 90% full and
+    be perfectly happy; this is the number that says whether it hurts.
+    """
+    try:
+        with open("/proc/pressure/memory") as fh:
+            for line in fh:
+                if line.startswith("some"):
+                    for tok in line.split():
+                        if tok.startswith("avg60="):
+                            return float(tok.split("=")[1])
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def _find_temp() -> str | None:

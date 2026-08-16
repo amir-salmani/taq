@@ -431,6 +431,22 @@ def cmd_doctor() -> int:
           f"({widgets.human_bytes(v.mem_used)}/{widgets.human_bytes(v.mem_total)})"
           f"  up {widgets.short_dur(v.uptime)}")
 
+    sw = v.swap
+    if sw.has_zram:
+        print(f"zram      {widgets.human_bytes(sw.zram_stored)} stored in "
+              f"{widgets.human_bytes(sw.zram_ram)} of RAM"
+              + (f" ({sw.ratio:.2f}x {sw.algorithm})" if sw.ratio else "")
+              + f" — {widgets.human_bytes(sw.saved)} of RAM you would not have")
+    if sw.disk_total:
+        print(f"disk swap {widgets.human_bytes(sw.disk_used)} / "
+              f"{widgets.human_bytes(sw.disk_total)}   (this is the slow one)")
+    if v.mem_pressure is not None:
+        verdict = ("not short on memory" if v.mem_pressure < 1
+                   else "under memory pressure" if v.mem_pressure < 10
+                   else "THRASHING")
+        print(f"pressure  {v.mem_pressure:.2f}% of the last 60s stalled on "
+              f"memory — {verdict}")
+
     p = v.power
     if p.present:
         left = (f"  {widgets.short_dur(p.seconds_left)} "

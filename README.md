@@ -156,10 +156,25 @@ ports, networks and IPs, mounts, and the command. Almost all of it comes from
 the list response already being fetched; only restart count, start time and
 policy need an inspect, and only for that one row.
 
-**System** — CPU with a braille history plot and per-core meters, memory, swap,
+**System** — CPU with a braille history plot and per-core meters, memory,
 network, disks, temperature — and power: charge, draw in watts, and **time left
 computed from the actual current draw** rather than a vendor guess, plus battery
 health against design capacity and cycle count.
+
+Swap is split, because one combined number lies on a zram system:
+
+```
+MEM  ████████████░░░░ 11.1G/14.6G
+ZRAM ███████████░░░   6.3G→1.9G 3.4×
+DISK ██▌░░░░░░░░░░░   732M swapped
+```
+
+zram is compressed pages held in RAM — reading one back costs microseconds.
+Disk swap is a disk trip. Reporting them together as "7.6G swapped" makes a
+perfectly healthy machine look like it is drowning, which is how you end up
+shopping for RAM you do not need. taq also surfaces the number that actually
+answers the question — PSI memory stall time — but only when it is non-zero,
+because a full-looking machine with no stalls is not short of anything.
 
 **Backlight** — brightness, and what it costs you. taq records the machine's
 power draw at each brightness level (only while on battery, and only when the

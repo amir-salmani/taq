@@ -444,10 +444,39 @@ def panel_system(b: Box, snap: dict, st: State) -> None:
         meter(b, b.y, 4, max(6, b.iw - 22), v.mem_pct / 100.0,
               f"{human_bytes(v.mem_used)}/{human_bytes(v.mem_total)}")
         b.y += 1
-    if v.swap_total and b.room > 1:
+
+    # zram and disk swap are not the same resource and must not share a bar.
+    # zram is compressed pages in RAM (microseconds); disk swap is a disk trip.
+    # One combined "7.6G used" reads as an emergency on a machine that is fine.
+    sw = v.swap
+    if sw.has_zram and b.room > 1:
+        b.put(b.y, 0, "ZRAM", attr(C_DIM))
+        frac = sw.zram_stored / sw.zram_total if sw.zram_total else 0.0
+        label = f"{human_bytes(sw.zram_stored)}→{human_bytes(sw.zram_ram)}"
+        if sw.ratio:
+            label += f" {sw.ratio:.1f}×"
+        meter(b, b.y, 5, max(6, b.iw - 24), frac, label)
+        b.y += 1
+    if sw.disk_total and b.room > 1:
+        # This is the one worth worrying about, so it gets the warning colour
+        # once anything meaningful lands on it.
+        b.put(b.y, 0, "DISK", attr(C_DIM))
+        frac = sw.disk_used / sw.disk_total
+        meter(b, b.y, 5, max(6, b.iw - 24), frac,
+              f"{human_bytes(sw.disk_used)} swapped")
+        b.y += 1
+    elif not sw.has_zram and v.swap_total and b.room > 1:
         b.put(b.y, 0, "SWP", attr(C_DIM))
-        meter(b, b.y, 4, max(6, b.iw - 22), v.swap_pct / 100.0,
+        meter(b, b.y, 5, max(6, b.iw - 24), v.swap_pct / 100.0,
               human_bytes(v.swap_used))
+        b.y += 1
+
+    # The number that actually answers "am I short on RAM". Only shown when it
+    # is saying something: a full-looking machine with no stalls is not short.
+    if v.mem_pressure is not None and v.mem_pressure >= 1.0 and b.room > 1:
+        b.put(b.y, 0, "STALL", attr(C_BAD, True))
+        b.put(b.y, 6, f"{v.mem_pressure:.1f}% of the last 60s waiting on memory",
+              attr(C_BAD if v.mem_pressure >= 10 else C_WARN))
         b.y += 1
 
     if b.room > 2:
