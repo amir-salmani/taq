@@ -62,6 +62,8 @@ class App:
         self._plan: str = ""
         self._hook: tuple = (False, 0.0)
         self._feeders: int = 0
+        self._sdk_only: bool = False
+        self._hits: list = []
         self._detail = None
 
     def _due(self, key: str, every: float, force: bool, now: float) -> bool:
@@ -97,6 +99,7 @@ class App:
             self.index.prune()
             self._projects = self.index.projects()
             self._split = self.index.model_split()
+            self._hits = self.index.limit_hits()
 
         if self._due("quota", QUOTA_EVERY, force, now):
             self._windows = quota.read_windows()
@@ -111,8 +114,15 @@ class App:
             self._sessions = usage.live_sessions()
             # Sessions capable of feeding the hook: ones that started after it
             # was installed. Zero of them means the quota numbers cannot move.
+            # A session can only feed the hook if it BOTH postdates the install
+            # and actually draws a status line. SDK-hosted sessions (Zed's agent
+            # panel) satisfy the first and never the second, which is why the
+            # bars sat frozen for days while sessions were plainly running.
             self._feeders = sum(1 for s in self._sessions
-                                if s.started_at >= self._hook[1] > 0)
+                                if s.started_at >= self._hook[1] > 0
+                                and s.renders_statusline)
+            self._sdk_only = bool(self._sessions) and not any(
+                s.renders_statusline for s in self._sessions)
 
         vitals = self.monitor.sample()
         if any(s.busy for s in self._sessions) or vitals.cpu_pct > 25:
@@ -131,6 +141,8 @@ class App:
             "plan": self._plan,
             "hook": self._hook,
             "feeders": self._feeders,
+            "sdk_only": self._sdk_only,
+            "hits": self._hits,
             "detail": self._detail,
             "sessions": self._sessions,
             "projects": self._projects,
@@ -389,6 +401,15 @@ def cmd_doctor() -> int:
     if not c.stale:
         print("  none")
 
+    idx_hits = usage.TranscriptIndex()
+    idx_hits.refresh()
+    hits = idx_hits.limit_hits()
+    print(f"\nrate-limit hits (7d, from transcripts)  {len(hits)}")
+    for t in hits[-5:]:
+        print(f"  {time.strftime('%a %d %b %H:%M', time.localtime(t))}")
+    if not hits:
+        print("  none")
+
     windows = quota.read_windows()
     plan = quota.read_plan()
     print(f"\nrate limits ({len(windows)} window(s) reporting)"
@@ -476,7 +497,9 @@ def cmd_doctor() -> int:
     sess = usage.live_sessions()
     print(f"\nsessions ({len(sess)})")
     for s in sess:
-        print(f"  {s.name:<20} pid {s.pid:<8} {s.state:<14} {s.cwd}")
+        mem = widgets.human_bytes(s.rss).rjust(7) if s.rss else "      -"
+        print(f"  {s.name:<20} pid {s.pid:<8} {s.state:<14} {mem}  "
+              f"{'sdk' if not s.renders_statusline else 'cli'}  {s.cwd}")
 
     print(f"\nrss  {rss_mb():.1f} MB")
     return 0

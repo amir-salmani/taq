@@ -82,6 +82,7 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
         for chunk in wrap(msg, b.iw):
             b.line(chunk, attr(C_DIM))
         b.skip()
+        _limit_hits(b, snap)
     else:
         bar_w = max(8, min(30, b.iw - 12))
         for key in ("five_hour", "seven_day"):
@@ -128,20 +129,26 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
                 b.put(b.y, 0, "measuring burn rate…", attr(C_DIM))
             b.y += 2
 
-        # Why the numbers are not moving, stated once rather than per window,
-        # and in terms of things you can see: a clock time and your own open
-        # sessions. "The hook" is taq's word for it, not yours.
+        _limit_hits(b, snap)
+
+        # Why the numbers are not moving. The SDK case is the common one and was
+        # previously mislabelled: those sessions DO postdate the hook, so the
+        # old check counted them as capable of reporting when they never are.
         if b.room > 0 and not snap.get("feeders", 0):
-            n = len(snap["sessions"])
-            since = snap.get("hook", (False, 0.0))[1]
-            when = f" at {reset_label(since)}" if since else ""
-            for chunk in wrap(f"Claude Code only sends these numbers from "
-                              f"sessions opened after taq was set up{when}. "
-                              f"Your {n} open session{'s' if n != 1 else ''} "
-                              f"predate{'' if n != 1 else 's'} that, so nothing "
-                              f"is refreshing them. Open any new Claude Code "
-                              f"session and this goes live within seconds.",
-                              b.iw):
+            if snap.get("sdk_only"):
+                msg = ("Bars cannot move: your sessions are SDK-hosted (Zed's "
+                       "agent panel) and have no status bar to report from. "
+                       "Run `claude` in a terminal to refresh. Hits above come "
+                       "from transcripts and are always current.")
+            else:
+                n = len(snap["sessions"])
+                since = snap.get("hook", (False, 0.0))[1]
+                when = f" at {reset_label(since)}" if since else ""
+                msg = (f"Claude Code only sends these numbers from sessions "
+                       f"opened after taq was set up{when}. Your {n} open "
+                       f"session{'s' if n != 1 else ''} predate that, so nothing "
+                       f"is refreshing them.")
+            for chunk in wrap(msg, b.iw):
                 b.line(chunk, attr(C_WARN))
             b.skip()
 
@@ -170,8 +177,14 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
             if on:
                 b.put(b.y, 0, "▸", attr(C_FOCUS, True))
             b.put(b.y, 2, "●" if s.busy else "○", attr(C_OK if s.busy else C_DIM))
-            b.put(b.y, 4, s.name[:20].ljust(20), base)
-            b.put(b.y, 25, s.state, attr(C_OK if s.busy else C_DIM))
+            b.put(b.y, 4, s.name[:18].ljust(18), base)
+            b.put(b.y, 23, s.state[:11].ljust(11), attr(C_OK if s.busy else C_DIM))
+            if s.rss:
+                # Colour by how close this one session is to being the reason
+                # the machine starts killing things.
+                gb = s.rss / (1 << 30)
+                b.put(b.y, 35, human_bytes(s.rss).rjust(6),
+                      grad(min(1.0, gb / 8.0), gb >= 4))
             b.y += 1
 
     projects = snap["projects"]
@@ -188,6 +201,36 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
             frac = pr.output / top
             b.put(b.y, 25, "█" * max(1, int(frac * bar_w)), grad(frac * 0.7))
             b.y += 1
+
+
+def _limit_hits(b: Box, snap: dict) -> None:
+    """Actual 429s, mined from the transcripts.
+
+    This is the one measure of "am I running out" that does not depend on the
+    status line, because every session writes a transcript no matter what
+    launched it. When the percentage bars are stale — which for SDK-only users
+    is always — this is the part that is still true.
+    """
+    hits = snap.get("hits") or []
+    if b.room < 2:
+        return
+    b.skip()
+    if not hits:
+        b.line("LIMIT HITS (7d)   none", attr(C_HEAD, True))
+        return
+
+    now = time.time()
+    day = sum(1 for t in hits if now - t < 86400)
+    b.put(b.y, 0, "LIMIT HITS (7d)", attr(C_HEAD, True))
+    b.put(b.y, 17, str(len(hits)), attr(C_BAD, True))
+    if day:
+        b.put(b.y, 21, f"({day} today)", attr(C_WARN))
+    b.y += 1
+    if b.room > 0:
+        last = max(hits)
+        b.put(b.y, 0, f"last {reset_label(last)} · {short_dur(now - last)} ago",
+              attr(C_DIM))
+        b.y += 1
 
 
 def panel_coherence(b: Box, snap: dict, st: State) -> None:

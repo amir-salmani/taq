@@ -51,6 +51,16 @@ class LiveSession:
     started_at: float
     last_activity: float = 0.0
     tmux: str | None = None
+    entrypoint: str = ""
+    rss: int = 0            # bytes, the session process only
+
+    @property
+    def renders_statusline(self) -> bool:
+        """Only the terminal UI draws a status line, and the status line is the
+        only thing that ever reports rate limits. SDK-hosted sessions — Zed's
+        agent panel, anything driving Claude Code programmatically — have no
+        status bar to draw, so they never invoke the hook."""
+        return self.entrypoint in ("cli", "")
 
     @property
     def alive(self) -> bool:
@@ -97,6 +107,10 @@ class TranscriptIndex:
         # (project, day_bucket) -> ProjectUse, so the window can be re-trimmed
         # without re-reading anything.
         self._daily: dict[tuple[str, int], ProjectUse] = {}
+        # Timestamps of actual 429s. The percentage bars come from the status
+        # line and so go blind for SDK sessions; this does not — every session
+        # writes a transcript, whatever launched it.
+        self._hits: list[float] = []
         self.last_refresh: float = 0.0
         self.cold_seconds: float = 0.0
 
@@ -148,6 +162,19 @@ class TranscriptIndex:
         """One transcript line. Deliberately takes a line rather than a blob:
         reading a 50MB transcript whole and splitting it costs ~100MB of peak
         RSS for the duration, which is the entire footprint budget."""
+        # Rate-limit rejections are assistant records with no usage block, so
+        # they have to be caught before the usage prefilter drops them.
+        if b'"isApiErrorMessage":true' in raw and b'rate_limit' in raw:
+            try:
+                rec = json.loads(raw)
+            except ValueError:
+                rec = None
+            if rec is not None and (rec.get("error") == "rate_limit"
+                                    or rec.get("apiErrorStatus") == 429):
+                ts = _parse_ts(rec.get("timestamp"))
+                if ts is not None:
+                    self._hits.append(ts)
+
         if b'"usage"' not in raw:
             return 0
         try:
@@ -208,6 +235,11 @@ class TranscriptIndex:
             for k, v in pu.branches.items():
                 m.branches[k] += v
         return sorted(merged.values(), key=lambda p: p.output, reverse=True)
+
+    def limit_hits(self, days: float = 7.0) -> list[float]:
+        """Timestamps of 429s in the trailing window, oldest first."""
+        floor = time.time() - days * DAY
+        return sorted(t for t in self._hits if t >= floor)
 
     def model_split(self, days: float | None = None) -> list[tuple[str, int]]:
         agg: dict[str, int] = defaultdict(int)
@@ -289,9 +321,11 @@ def live_sessions() -> list[LiveSession]:
             cwd=str(d.get("cwd") or "?"),
             started_at=float(d.get("startedAt") or 0) / 1000.0,
             tmux=d.get("tmux"),
+            entrypoint=str(d.get("entrypoint") or ""),
         )
         if not s.alive:
             continue
+        s.rss = _rss_bytes(s.pid)
 
         # Activity == when its transcript was last appended to.
         try:
@@ -303,6 +337,18 @@ def live_sessions() -> list[LiveSession]:
 
     out.sort(key=lambda s: s.last_activity, reverse=True)
     return out
+
+
+def _rss_bytes(pid: int) -> int:
+    """Resident size of one session. Claude Code can grow to many gigabytes on a
+    long conversation and then be OOM-killed outright — on this machine one hit
+    6.9 GB and took the session with it. Showing the number turns that from a
+    surprise into something you can watch approaching."""
+    try:
+        with open(f"/proc/{pid}/statm") as fh:
+            return int(fh.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        return 0
 
 
 def _encode_cwd(cwd: str) -> str:
