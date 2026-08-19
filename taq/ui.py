@@ -19,6 +19,10 @@ from .widgets import (Box, C_ACCENT, C_BAD, C_DIM, C_FOCUS, C_HEAD, C_OK,
 CLAUDE, DOCKER, SYSTEM, COHERENCE = range(4)
 PANEL_NAMES = ("Claude", "Docker", "System", "Coherence")
 WIDE_AT = 100          # below this, one panel at a time
+# How old a rate-limit reading may be before it stops counting as current.
+# taq-refresh runs every 10 minutes, so anything inside 12 is simply the gap
+# between refreshes rather than a stale reading.
+FRESH_SECONDS = 12 * 60
 
 
 class State:
@@ -104,13 +108,17 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
             # A reading is only as current as the last session that reported.
             # Showing a frozen number with no age is how you end up trusting
             # 44% while the web page says 49%.
+            # Freshness is a property of the DATA, not of which sessions happen
+            # to be open. taq-refresh feeds this from a throwaway session that
+            # exits after ~12s, so there is usually no live reporter even though
+            # the reading is a few minutes old at worst. Judging by sessions
+            # alone would label a current number "frozen".
             feeders = snap.get("feeders", 0)
-            if not feeders:
-                # Nothing can update this, so say so every time, not just once
-                # it has gone visibly old.
+            fresh = w.stale_for < FRESH_SECONDS
+            if not fresh and not feeders:
                 b.put(b.y, 0, f"⚠ frozen · measured {short_dur(w.stale_for)} ago",
                       attr(C_BAD, True))
-            elif w.stale_for > 180:
+            elif not fresh and w.stale_for > 180:
                 b.put(b.y, 0, f"⚠ {short_dur(w.stale_for)} old — at least this much",
                       attr(C_WARN))
             elif w.eta is not None and w.will_exhaust:
@@ -134,7 +142,8 @@ def panel_claude(b: Box, snap: dict, st: State) -> None:
         # Why the numbers are not moving. The SDK case is the common one and was
         # previously mislabelled: those sessions DO postdate the hook, so the
         # old check counted them as capable of reporting when they never are.
-        if b.room > 0 and not snap.get("feeders", 0):
+        newest = min((w.stale_for for w in windows.values()), default=1e9)
+        if b.room > 0 and not snap.get("feeders", 0) and newest >= FRESH_SECONDS:
             if snap.get("sdk_only"):
                 msg = ("Bars cannot move: your sessions are SDK-hosted (Zed's "
                        "agent panel) and have no status bar to report from. "
