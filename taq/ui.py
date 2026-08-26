@@ -10,6 +10,7 @@ from __future__ import annotations
 import curses
 import time
 
+from . import clocks
 from . import coherence as coh
 from . import quota
 from .widgets import (Box, C_ACCENT, C_BAD, C_DIM, C_FOCUS, C_HEAD, C_OK,
@@ -299,6 +300,35 @@ def panel_coherence(b: Box, snap: dict, st: State) -> None:
             b.put(b.y, 23, " ".join(map(str, pids[:3])) + (" …" if len(pids) > 3 else ""),
                   attr(C_DIM))
             b.y += 1
+
+    _clocks_block(b)
+
+
+def _clocks_block(b: Box) -> None:
+    """Tampere and Tehran, drawn last so a leak always outranks a clock."""
+    rows = clocks.read()
+    if not rows or b.room < len(rows) + 2:
+        return
+
+    b.skip()
+    b.line("TIME", attr(C_HEAD, True))
+    for c in rows:
+        if b.room <= 0:
+            return
+        local = c.is_local
+        b.put(b.y, 0, c.label[:9].ljust(9), attr(C_TEXT if local else C_DIM, local))
+        b.put(b.y, 10, c.hhmm, attr(C_ACCENT, True) if local else attr(C_TEXT))
+        if b.iw >= 40:
+            b.put(b.y, 17, c.date, attr(C_DIM))
+        b.put(b.y, 29 if b.iw >= 40 else 17, c.delta_label,
+              attr(C_DIM) if local else attr(C_WARN))
+        b.y += 1
+
+    # The gap is only half the story: it changes twice a year, on dates neither
+    # country tells you about.
+    if b.room > 0 and (shift := clocks.next_shift()):
+        b.put(b.y, 0, f"gap {shift}", attr(C_DIM))
+        b.y += 1
 
 
 def panel_docker(b: Box, snap: dict, st: State) -> None:

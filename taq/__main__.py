@@ -16,7 +16,7 @@ import sys
 import time
 
 from . import coherence as coh
-from . import dockerd, paths, quota, system, ui, usage, widgets
+from . import clocks, dockerd, paths, quota, system, ui, usage, widgets
 
 # The app is idle almost all the time, so it should cost almost nothing almost
 # all the time. These are the ceilings; the loop picks between them.
@@ -500,6 +500,13 @@ def cmd_doctor() -> int:
         mem = widgets.human_bytes(s.rss).rjust(7) if s.rss else "      -"
         print(f"  {s.name:<20} pid {s.pid:<8} {s.state:<14} {mem}  "
               f"{'sdk' if not s.renders_statusline else 'cli'}  {s.cwd}")
+
+    if rows := clocks.read():
+        print("\ntime")
+        for c in rows:
+            print(f"  {c.label:<10} {c.hhmm}  {c.date}  {c.delta_label}")
+        if shift := clocks.next_shift():
+            print(f"  gap {shift}")
 
     print(f"\nrss  {rss_mb():.1f} MB")
     return 0
