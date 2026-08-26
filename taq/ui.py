@@ -417,10 +417,17 @@ def _docker_detail(b: Box, c, det, bottom: int) -> None:
     b.put(b.y, 0, "─" * b.iw, attr(C_DIM))
     b.y += 1
 
+    # Three items at fixed columns collide once the names get long: a
+    # "service kit-publisher" ran straight into the container id and rendered
+    # as "service kit-p3ce8bf28ca80". Clip the middle one to the gap it
+    # actually has, and drop it when that gap is too small to be worth it.
+    id_col = max(0, b.iw - 13)
     b.put(b.y, 0, c.name[:28], attr(C_ACCENT, True))
     if c.service:
-        b.put(b.y, 30, f"service {c.service}", attr(C_DIM))
-    b.put(b.y, b.iw - 13, c.short, attr(C_DIM))
+        room = id_col - 31          # leave a clear column before the id
+        if room >= 18:          # fewer characters than this is not worth a column
+            b.put(b.y, 30, f"service {c.service}"[:room], attr(C_DIM))
+    b.put(b.y, id_col, c.short, attr(C_DIM))
     b.y += 1
 
     def row(label: str, value: str, a: int = 0) -> None:

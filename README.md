@@ -7,44 +7,48 @@ think it is, what Docker is doing, and what the system is doing.
 Stdlib Python, no dependencies, ~28 MB resident.
 
 ```
- taq   1 Claude   2 Docker   3 System   4 Coherence           ◆ 2/3   ▲ COHERENT   23:57
-╭─ Claude ─────────────────────────────────────────╮╭─ System ─────────────────────────╮
-│ Plan usage limits Max (5x)                       ││ CPU   8.4%  53°C   load 1.02     │
-│                                                  ││ ⠀⠀⣀⣤⣆⣀⣠⣤⣶⣤⣄⣀⣤⣶⣿⣷⣤⣀⣠⣴⣶⣿⣷⣦⣄⡀⣠⣴⣶⣿⣷⣦⣄ │
-│ Current session                        62% used  ││  0  10 ▌░░░░  1   8 ░░░░░        │
-│ ██████████████████░░░░░░░░░░░                    ││  2   9 ▌░░░░  3  64 ███░░        │
-│ resets 03:00 · in 3h                             ││ MEM ████████████░░░ 10.8G/14.6G  │
-│ ⚠ hits the cap ~02:21, 39m early                 ││ SWP ████████▌░░░░░░ 7.4G         │
-│                                                  ││ NET ↓3.9K/s      ↑1.2K/s         │
-│ Weekly · all models                    14% used  ││                                  │
-│ ████░░░░░░░░░░░░░░░░░░░░░░░░░                    ││ PWR 🔋58%   9.1W   4.1h left     │
-│ resets Fri 18:30 · in 5.8d                       ││ ███████████░░░░░░░░  health 96%  │
-│ +2.4%/h — clears the window                      ││ LCD 60%  ██████████▌░░░░░░       │
-│                                                  ││     at 30%: 7.1W  +1h20m         │
-│ per-model limits are not exposed to local tools  ││ /       ███████░░░░░░ 329G free  │
-│                                                  ││ up 3.4d  2732 procs  14 cycles   │
-│ SESSIONS (7)                                     │╰──────────────────────────────────╯
-│ ▸ ● amirsalmani-0e    busy                       │╭─ Coherence ──────────────────────╮
-│   ○ vuhom-09          idle 2m                    ││ ▲ COHERENT                       │
-│                                                  ││ tunnelled via :12334             │
-│ OUTPUT TOKENS (7d)                               ││ ● Throne     listening :12334    │
-│ Lotusion         2.3M ████████████████████       ││ ● GNOME      manual              │
-╰──────────────────────────────────────────── j/k ─╯│ ● shell env  127.0.0.1:12334     │
-╭─ Docker ─────────────────────────────────────────╮│ ○ apt        direct + per-host   │
-│ ▼ career-ops                                     ││ ● zed        127.0.0.1:12334     │
-│ ▸ ● web            2.0%  10.9M Up 3m (healthy)   ││ ● DNS        Throne resolver     │
-│   ○ migrate                    Exited (143)      ││                                  │
-│ ───────────────────────────────────────────────  ││ exit         194.5.207.166       │
-│ web                 service web    aa0d354c1f9d  ││                                  │
-│ image      node:24-alpine                        ││ STALE ENVIRONMENT (21)           │
-│ state      running · Up 3 minutes (healthy)      ││ started while the proxy was up,  │
-│ run        started 15 Aug 22:50 · unless-stopped ││ still pointing at it — restart.  │
-│ cpu / mem  2.0%   10.9M / 14.6G  (1%)            ││ claude       ×7  1115452 1458097 │
-│ net        ↓108M  ↑6.7M                          ││ bash         ×6  6769 7018 …     │
-│ ports      127.0.0.1:3000→3000/tcp               ││ zed-editor   ×2  1114638 1114676 │
-│ mounts     ~/CodeBase/app → /app [bind,rw]       ││                                  │
-╰──────────────────────── j/k  L logs  S/s/R ──────╯╰──────────────────────────────────╯
- ? keys   Tab panel   r refresh   q quit                                    28MB · 1s
+ taq   1 Claude   2 Docker   3 System   4 Coherence                          ◆ 1/2   ▲ COHERENT   09:53
+╭─ Claude ─────────────────────────────────────────────────╮╭─ System ─────────────────────────────────╮
+│ Plan usage limits Max (5x)                               ││ CPU   7.6%  51°C   load 1.32             │
+│                                                          ││ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ │
+│ Current session                                13% used  ││ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀ │
+│ ███▌░░░░░░░░░░░░░░░░░░░░░░░░░░                           ││  0  29 ███▌░░░░░░░░  1  22 ██▌░░░░░░░░░  │
+│ resets 14:30 · in 4.6h                                   ││                                          │
+│ trend needs 6m of data (0s so far)                       ││ MEM █████████████░░░░░ 10.8G/14.6G       │
+│                                                          ││ ZRAM ███▌░░░░░░░░░░░░ 2.6G→793M 3.4×     │
+│ Weekly · all models                            4% used   ││ DISK ░░░░░░░░░░░░░░░░ 0B swapped         │
+│ █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                           ││                                          │
+│ resets Fri 18:30 · in 2.4d                               ││ NET ↓41.8K/s      ↑2.7M/s                │
+│ flat                                                     ││           ▁   ▂▃▃▅█                  █▅  │
+│                                                          ││                                          │
+│                                                          ││ PWR ⚡96%    9.7W    16m to full         │
+│ LIMIT HITS (7d)  1                                       ││ █████████████████████░ health 97%        │
+│ last Thu 00:54 · 6.4d ago                                ││ LCD 50%  █████░░░░░                      │
+│ per-model limits are not exposed to local tools          ││     on AC — measuring pauses             │
+│                                                          ││                                          │
+│ opus-5 100%  <synthetic> 0%                              ││ /          ████▌░░░░░░░ 281G free        │
+╰───────────────────────────────────────────────────── j/k ╯╰──────────────────────────────────────────╯
+╭─ Docker ─────────────────────────────────────────────────╮╭─ Coherence ──────────────────────────────╮
+│ ▼ career-ops                                             ││ ▲ COHERENT                               │
+│ ▸ ● career-ops-kit-publisher                   Up 2 days ││ tunnelled via :12334                     │
+│   ○ career-ops-web                             Exited (1 ││                                          │
+│                                                          ││ ● Throne     listening :12334            │
+│                                                          ││ ○ GNOME      none                        │
+│ ──────────────────────────────────────────────────────── ││ ● shell env  http://127.0.0.1:12334      │
+│ career-ops-kit-publisher      service kit-p3ce8bf28ca80  ││ ○ apt        direct + per-host           │
+│ image      mcr.microsoft.com/playwright:v1.61.1-jammy    ││ ● zed        http://127.0.0.1:12334      │
+│ state      running · Up 2 days                           ││ ● ssh        CONNECT via proxy           │
+│ run        started 23 Aug 12:16 · unless-stopped         ││ ● DNS        Throne resolver :5533       │
+│ cpu / mem  0.0%   5.6M / 14.6G  (0%)                     ││                                          │
+│ net        ↓30.1K  ↑126B                                 ││ exit         2a01:4f8:c010:339a::1       │
+│ disk       read 31.8M  write 1.9M                        ││                                          │
+│ pids       3                                             ││ TIME                                     │
+│ ports      none published                                ││ Tampere   09:23  Wed 26 Aug  −30m        │
+│ network    career-ops_default  172.18.0.2                ││ Tehran    09:53  Wed 26 Aug  local       │
+│ mounts     ~/CodeBase/AmirSalmani → /work [bind,rw]      ││ gap 1h30 from 25 Oct                     │
+│ command    bash -lc 'echo '[kit-publisher] watching /wor ││                                          │
+╰────────────────────────────────────── j/k  L logs  S/s/R ╯╰─────────────────────────────── i exit-IP ╯
+ ? keys   Tab panel   r refresh   q quit                                                      50MB · 1s
 ```
 
 ## Why
@@ -86,6 +90,40 @@ This adds a status line to Claude Code (which replaces most of the built-in
 footer hints — that is Claude Code's behaviour, not taq's). Undo by deleting the
 `statusLine` key from `~/.claude/settings.json`.
 
+## Keeping the numbers fresh
+
+Only Claude Code's **terminal UI** draws a status line. Sessions hosted by the
+SDK — Zed's agent panel, anything driving Claude Code programmatically — have no
+status bar, so they never invoke the hook. Work exclusively in an editor and the
+percentages freeze: they sat four days stale here, reading 15% while the truth
+was 47%.
+
+`taq-refresh` opens a throwaway terminal session, lets it render once, and stops
+it. Run it by hand, or on a timer:
+
+```sh
+taq-refresh --force
+systemctl --user enable --now taq-refresh.timer   # every 10 minutes
+```
+
+It costs nothing against your quota. The 5-hour window starts when a message is
+*sent*, and this never sends one — it opens the UI, which reports the limits it
+already knows, and exits. About 350 MB for 12 seconds.
+
+Two things it has to get right, both learned the hard way:
+
+- **It must start in a trusted directory.** Claude Code asks "do you trust this
+  folder?" anywhere it has not seen before, and that dialog blocks before the UI
+  renders, so the refresh silently times out. It reads `~/.claude.json` for a
+  directory already marked trusted and runs there.
+- **It must not `pkill claude`.** That would take your real sessions with it.
+  The child goes into its own process group via `setsid`, and only that group is
+  killed.
+
+The panel judges freshness by the age of the reading, not by which sessions are
+open — otherwise a two-minute-old number would be labelled frozen the moment the
+refresher exits.
+
 ## Commands
 
 | | |
@@ -95,6 +133,7 @@ footer hints — that is Claude Code's behaviour, not taq's). Undo by deleting t
 | `taq line` | one-line verdict for tmux / a prompt / waybar |
 | `taq install` | register the statusline hook |
 | `taq statusline` | internal; reads a payload on stdin |
+| `taq-refresh` | open a throwaway session so the limits update (see below) |
 
 `taq line` exits non-zero when the verdict is not COHERENT, so it works in a
 conditional:
@@ -146,8 +185,40 @@ The method is just picking the cheap interface every time:
 
 **Claude** — plan tier, and the two limits using the same words as the web usage
 page ("Current session", "Weekly · all models") so the screens can be compared
-without translating. Plus a burn-rate projection, live sessions, and output
-tokens per project.
+without translating. Plus a burn-rate projection, live sessions with their
+memory use, and output tokens per project.
+
+It also counts the times you actually hit a limit, read straight out of the
+transcripts:
+
+```
+LIMIT HITS (7d)  4
+last Tue 15:51 · 30h ago
+```
+
+That number comes from a different source than the bars — every session writes
+a transcript whatever launched it — so it stays true even when the percentages
+cannot be refreshed.
+
+**Coherence** — every layer that could be routing your traffic, one verdict over
+them, and the running processes still holding a dead proxy. This is the panel
+the whole project exists for; see [Why](#why).
+
+It also carries two clocks, because the machine sits between two places:
+
+```
+TIME
+Tampere   09:19  Wed 26 Aug  −30m
+Tehran    09:49  Wed 26 Aug  local
+gap 1h30 from 25 Oct
+```
+
+The times are the easy half. The gap is the half that catches people: Finland
+observes DST, Iran abolished it in 2022, so the difference is 30 minutes for
+part of the year and 90 for the rest, and it flips on a date neither country
+announces to you. taq finds the next flip by walking the offset forward rather
+than hardcoding it. "local" is whichever zone matches the system clock, so the
+labels swap themselves after a move. Zones live in `taq/clocks.py`.
 
 **Docker** — containers grouped by compose project, with health and live
 CPU/memory, and a detail pane for whichever row the cursor is on: image, state,
@@ -204,8 +275,11 @@ persists across runs in `~/.local/state/taq/power.json`.
   otherwise.
 - Burn-rate projection regresses on the reported percentage over time, never on
   token counts — mapping tokens to rate-limit consumption would mean guessing
-  Anthropic's weighting. It needs 3 samples over 5 minutes before it will
-  commit to an ETA.
+  Anthropic's weighting. The bar for a credible trend scales with the window:
+  2% of its length, so 6 minutes for the 5-hour budget and 3.4 hours for the
+  weekly one. Below that it says what it is waiting for instead of guessing —
+  an earlier version extrapolated a weekly cap from twenty minutes of data and
+  confidently announced a breach 3.5 days early.
 - Container CPU% is measured over taq's own poll interval, so the first reading
   after startup is 0.
 - Layer detection is tuned for this setup: Throne, GNOME, apt, Zed, ssh. Paths
