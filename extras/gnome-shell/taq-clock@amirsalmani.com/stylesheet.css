@@ -1,0 +1,4 @@
+/* Dimmer than the real clock: this is a reference, not the time you live in. */
+.taq-second-clock {
+    color: rgba(255, 255, 255, 0.55);
+}

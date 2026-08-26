@@ -1,0 +1,8 @@
+{
+  "uuid": "taq-clock@amirsalmani.com",
+  "name": "taq · second clock",
+  "description": "Shows a second timezone beside the top-bar clock, e.g. \"Aug 26  09:52 | 09:22\". Companion to taq. Reads the zone from ~/.config/taq/second-zone, defaulting to Europe/Helsinki.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/amir-salmani/taq",
+  "version": 1
+}

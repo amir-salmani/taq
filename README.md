@@ -124,6 +124,34 @@ The panel judges freshness by the age of the reading, not by which sessions are
 open — otherwise a two-minute-old number would be labelled frozen the moment the
 refresher exits.
 
+## Second clock in the GNOME top bar
+
+An optional companion, not part of the TUI: `extras/gnome-shell/` holds a GNOME
+Shell extension that puts a second timezone next to the panel clock.
+
+```
+Aug 26  09:52 | 09:22
+```
+
+GNOME can show world clocks inside the calendar popover, but nothing in the
+panel itself — and the popover is a place you have to decide to open. When the
+people you work with are in one country and the people you call are in another,
+that number belongs where you glance without deciding to.
+
+```sh
+extras/gnome-shell/install.sh     # then log out and back in
+```
+
+The zone defaults to `Europe/Helsinki`; put a different tz name in
+`~/.config/taq/second-zone` to change it. It follows your 12h/24h setting, and
+runs no timer of its own — the panel clock already ticks once a minute, so the
+extension follows that label instead of scheduling anything.
+
+Two constraints worth knowing, both hit while building it: a **symlink into the
+extensions directory does not work** (the shell's scanner does not follow them,
+so `install.sh` copies), and **the shell only scans at startup** — on Wayland
+there is no way to load a new extension without logging out.
+
 ## Commands
 
 | | |
