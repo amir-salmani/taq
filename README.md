@@ -4,7 +4,7 @@ A terminal HUD for the four things that are true about your machine right now:
 how much Claude quota is left, whether your traffic is actually going where you
 think it is, what Docker is doing, and what the system is doing.
 
-Stdlib Python, no dependencies, ~28 MB resident.
+Stdlib Python, no dependencies, ~26 MB resident.
 
 ```
  taq   1 Claude   2 Docker   3 System   4 Coherence                          ◆ 1/2   ▲ COHERENT   09:53
@@ -189,10 +189,10 @@ a container.
 
 ## How it stays cheap
 
-Measured at ~1.0% of one core and 27.8 MB resident with four containers running
-and the tick at its fastest. The tick backs off to 3 s and then 15 s when
-nothing is changing, and every source is gated behind its own cadence, so an
-idle `taq` costs roughly a tenth of that.
+Measured at ~1.3% of one core and 26 MB resident with the tick at its fastest.
+The tick backs off to 3 s and then 15 s when nothing is changing, and every
+source is gated behind its own cadence, so an idle `taq` costs roughly a tenth
+of that.
 
 The method is just picking the cheap interface every time:
 
@@ -208,6 +208,14 @@ The method is just picking the cheap interface every time:
   therefore no index staleness.
 - **Line-at-a-time parsing**, because reading a 50 MB transcript whole and
   splitting it costs ~100 MB of peak RSS — the entire budget.
+- **`malloc_trim` after the cold scan.** Parsing a ~470 MB tree leaves ~23 MB of
+  freed-but-retained arenas behind: glibc keeps them for reuse, and since the
+  steady-state index is about 2 MB they are never reused. That was nearly half
+  the resident footprint — 48 MB against 26. `gc.collect()` alone does nothing,
+  because the objects are already gone; it is the allocator holding the pages.
+
+The numbers are measured, not estimated, and they are checked against the kernel
+rather than trusted: taq's own footer agreed with `VmRSS` to 1 MB when tested.
 
 ## What the panels show
 

@@ -18,6 +18,8 @@ WHAT THE NUMBERS MEAN
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import json
 import os
 import time
@@ -155,6 +157,13 @@ class TranscriptIndex:
         elapsed = time.time() - t0
         if self.last_refresh == 0.0:
             self.cold_seconds = elapsed
+            # The cold pass parses a ~half-gigabyte tree and leaves ~24MB of
+            # freed-but-retained arenas behind: glibc holds them for reuse, and
+            # since the steady-state index is only ~2MB they are never reused.
+            # That was most of the resident footprint, and the footprint is the
+            # whole pitch. gc.collect() alone does nothing here — the objects
+            # are already gone; it is the allocator that is holding the pages.
+            _release_freed_memory()
         self.last_refresh = time.time()
         return absorbed
 
@@ -253,6 +262,15 @@ class TranscriptIndex:
         floor = int((time.time() - self.window) // DAY)
         for k in [k for k in self._daily if k[1] < floor]:
             del self._daily[k]
+
+
+def _release_freed_memory() -> None:
+    """Hand freed heap back to the OS. glibc-only; a no-op anywhere else."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 def _parse_ts(value) -> float | None:
