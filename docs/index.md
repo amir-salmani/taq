@@ -13,7 +13,6 @@ project:
   owner: amir
   kind: tool
   lifecycle: active
-  flow: pr
   visibility: public
   hosting: github
   toolchain: python
