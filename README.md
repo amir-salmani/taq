@@ -1,3 +1,13 @@
+---
+type: Readme
+title: taq
+description: A terminal HUD for the four things that are true about your machine right now:.
+status: active
+created: 2026-09-17
+timestamp: 2026-09-17
+tags: []
+---
+
 # taq
 
 A terminal HUD for the four things that are true about your machine right now:
