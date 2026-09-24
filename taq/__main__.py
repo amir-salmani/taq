@@ -16,7 +16,7 @@ import sys
 import time
 
 from . import coherence as coh
-from . import clocks, dockerd, paths, quota, system, ui, usage, widgets
+from . import clocks, dockerd, estate, paths, quota, system, ui, usage, widgets
 
 # The app is idle almost all the time, so it should cost almost nothing almost
 # all the time. These are the ceilings; the loop picks between them.
@@ -359,6 +359,9 @@ def cmd_statusline() -> int:
 
         c = coh.snapshot(deep=False)
         bits.append("\x1b[32m▲\x1b[0m" if c.verdict == coh.COHERENT else "\x1b[31m▲\x1b[0m")
+        seg = estate.segment()
+        if seg:
+            bits.append(seg)
         print("  ".join(bits))
     except Exception:
         print("taq")
