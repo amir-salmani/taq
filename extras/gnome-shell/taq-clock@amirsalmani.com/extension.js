@@ -17,7 +17,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-const DEFAULT_ZONE = 'Europe/Helsinki';
+const DEFAULT_ZONE = 'Asia/Tehran';
 const ZONE_FILE = GLib.build_filenamev(
     [GLib.get_user_config_dir(), 'taq', 'second-zone']);
 

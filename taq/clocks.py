@@ -1,7 +1,7 @@
 """Two clocks: where you are, and where the rest of your life is.
 
 The interesting part is not the times — it is the gap between them. Finland
-observes DST; Iran abolished it in 2022. So Tampere↔Tehran is 30 minutes for
+observes DST; Iran abolished it in 2022. So Helsinki↔Tehran is 30 minutes for
 half the year and 90 for the other half, and it changes on a date neither
 country announces to you. Getting that wrong costs you an interview.
 """
@@ -19,7 +19,7 @@ except ImportError:                                   # pragma: no cover
 
 # Ordered as they are drawn. Add more here and the panel follows.
 ZONES: tuple[tuple[str, str], ...] = (
-    ("Tampere", "Europe/Helsinki"),
+    ("Helsinki", "Europe/Helsinki"),
     ("Tehran", "Asia/Tehran"),
 )
 

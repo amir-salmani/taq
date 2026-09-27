@@ -305,7 +305,7 @@ def panel_coherence(b: Box, snap: dict, st: State) -> None:
 
 
 def _clocks_block(b: Box) -> None:
-    """Tampere and Tehran, drawn last so a leak always outranks a clock."""
+    """Helsinki and Tehran, drawn last so a leak always outranks a clock."""
     rows = clocks.read()
     if not rows or b.room < len(rows) + 2:
         return

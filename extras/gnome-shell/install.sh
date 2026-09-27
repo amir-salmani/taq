@@ -38,6 +38,6 @@ echo
 echo "  Log out and back in. The shell scans for new extensions only at startup,"
 echo "  and Wayland has no way to restart it in place."
 echo
-echo "  Zone defaults to Europe/Helsinki. To change it:"
+echo "  Zone defaults to Asia/Tehran. To change it:"
 echo "      mkdir -p ~/.config/taq && echo 'Europe/Berlin' > ~/.config/taq/second-zone"
 echo "  Then: gnome-extensions disable $UUID && gnome-extensions enable $UUID"

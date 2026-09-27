@@ -53,8 +53,8 @@ Stdlib Python, no dependencies, ~26 MB resident.
 │ net        ↓30.1K  ↑126B                                 ││ exit         2a01:4f8:c010:339a::1       │
 │ disk       read 31.8M  write 1.9M                        ││                                          │
 │ pids       3                                             ││ TIME                                     │
-│ ports      none published                                ││ Tampere   09:23  Wed 26 Aug  −30m        │
-│ network    career-ops_default  172.18.0.2                ││ Tehran    09:53  Wed 26 Aug  local       │
+│ ports      none published                                ││ Helsinki  09:23  Wed 26 Aug  local       │
+│ network    career-ops_default  172.18.0.2                ││ Tehran    09:53  Wed 26 Aug  +30m        │
 │ mounts     ~/CodeBase/AmirSalmani → /work [bind,rw]      ││ gap 1h30 from 25 Oct                     │
 │ command    bash -lc 'echo '[kit-publisher] watching /wor ││                                          │
 ╰────────────────────────────────────── j/k  L logs  S/s/R ╯╰─────────────────────────────── i exit-IP ╯
@@ -152,7 +152,7 @@ that number belongs where you glance without deciding to.
 extras/gnome-shell/install.sh     # then log out and back in
 ```
 
-The zone defaults to `Europe/Helsinki`; put a different tz name in
+The zone defaults to `Asia/Tehran`; put a different tz name in
 `~/.config/taq/second-zone` to change it. It follows your 12h/24h setting, and
 runs no timer of its own — the panel clock already ticks once a minute, so the
 extension follows that label instead of scheduling anything.
@@ -254,8 +254,8 @@ It also carries two clocks, because the machine sits between two places:
 
 ```
 TIME
-Tampere   09:19  Wed 26 Aug  −30m
-Tehran    09:49  Wed 26 Aug  local
+Helsinki  09:19  Wed 26 Aug  local
+Tehran    09:49  Wed 26 Aug  +30m
 gap 1h30 from 25 Oct
 ```
 
